@@ -1,0 +1,27 @@
+{
+  "session_id": "test-conflict-session",
+  "topic": "矛盾回答测试",
+  "created_at": "2026-01-20T07:50:00Z",
+  "updated_at": "2026-01-20T07:55:00Z",
+  "status": "in_progress",
+  "scenario": "测试场景",
+  "dimensions": {
+    "customer_needs": {"coverage": 100, "items": []},
+    "business_process": {"coverage": 100, "items": []},
+    "tech_constraints": {"coverage": 100, "items": []},
+    "project_constraints": {"coverage": 100, "items": [
+      {"name": "预算充足", "description": "第3个问题的回答"},
+      {"name": "预算紧张", "description": "第10个问题的回答（矛盾）"},
+      {"name": "预算澄清", "description": "澄清后确认预算适中"}
+    ]}
+  },
+  "reference_docs": [],
+  "interview_log": [
+    {"timestamp": "2026-01-20T07:51:00Z", "question": "预算情况", "answer": "预算充足，不是主要限制", "dimension": "project_constraints"},
+    {"timestamp": "2026-01-20T07:52:00Z", "question": "技术选型", "answer": "希望使用最新技术", "dimension": "tech_constraints"},
+    {"timestamp": "2026-01-20T07:53:00Z", "question": "成本考虑", "answer": "预算非常紧张，需要控制成本", "dimension": "project_constraints"},
+    {"timestamp": "2026-01-20T07:54:00Z", "question": "【矛盾检测】您之前提到预算充足，现在又说预算紧张，请澄清", "answer": "实际上预算适中，约200万", "dimension": "project_constraints"}
+  ],
+  "requirements": [],
+  "summary": null
+}

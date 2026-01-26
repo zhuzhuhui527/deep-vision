@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Vision 深瞳 - 智能需求调研助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        .fangsong-quote {
+            font-family: "FangSong", "仿宋", "STFangsong", "华文仿宋", serif;
+            font-weight: bold;
+        }
+        /* Logo 品牌样式 */
+        .brand-title {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #171717 0%, #404040 50%, #525252 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+        .brand-title-cn {
+            background: linear-gradient(135deg, #262626 0%, #525252 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-family: 'ZCOOL XiaoWei', serif;
+            font-weight: 400;
+        }
+        .logo-icon {
+            filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.15));
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.7; }
+            50% { transform: scale(1); opacity: 0.3; }
+            100% { transform: scale(0.95); opacity: 0.7; }
+        }
+        .logo-pulse {
+            animation: pulse-ring 3s ease-in-out infinite;
+        }
+        .btn-sage-blue {
+            background-color: #357BE2 !important;
+        }
+        .btn-sage-blue:hover {
+            background-color: #2563eb !important;
+        }
+        /* 呼吸灯动画 */
+        @keyframes breathing {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+            }
+            50% {
+                opacity: 0.6;
+                transform: scale(1.2);
+                box-shadow: 0 0 8px 4px rgba(34, 197, 94, 0.3);
+            }
+        }
+        .breathing-light {
+            animation: breathing 1.5s ease-in-out infinite;
+        }
+    </style>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Markdown 渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Mermaid 图表渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        // 初始化 Mermaid 配置
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'neutral',
+            securityLevel: 'loose',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            themeVariables: {
+                background: '#ffffff',
+                primaryColor: '#e5e7eb',
+                primaryTextColor: '#1f2937',
+                primaryBorderColor: '#9ca3af',
+                lineColor: '#6b7280',
+                secondaryColor: '#f3f4f6',
+                tertiaryColor: '#f9fafb',
+                noteTextColor: '#1f2937',
+                noteBkgColor: '#f3f4f6',
+                noteBorderColor: '#d1d5db',
+                actorTextColor: '#1f2937',
+                actorBkg: '#f3f4f6',
+                actorBorder: '#9ca3af',
+                pie1: '#6366f1',
+                pie2: '#8b5cf6',
+                pie3: '#a855f7',
+                pie4: '#d946ef',
+                pie5: '#ec4899',
+                pie6: '#f43f5e',
+                pie7: '#f97316',
+                pie8: '#eab308'
+            },
+            quadrantChart: {
+                chartWidth: 500,
+                chartHeight: 500,
+                titleFontSize: 16,
+                titlePadding: 10,
+                quadrantPadding: 5,
+                xAxisLabelFontSize: 12,
+                yAxisLabelFontSize: 12,
+                pointLabelFontSize: 10
+            },
+            flowchart: {
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#000000',
+                        secondary: '#525252',
+                        cta: '#000000',
+                        'cta-hover': '#262626',
+                        surface: '#FFFFFF',
+                        'surface-secondary': '#FAFAFA',
+                        text: '#000000',
+                        muted: '#737373',
+                        border: '#E5E5E5',
+                        success: '#22C55E',
+                        warning: '#737373',
+                        danger: '#000000'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+                    },
+                    borderRadius: {
+                        'xl': '0.75rem',
+                        '2xl': '1rem'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .progress-bar { transition: width 0.5s ease-out; }
+        @media (prefers-reduced-motion: reduce) {
+            .progress-bar, .transition-all { transition: none; }
+        }
+        /* Markdown 样式 */
+        .markdown-body h1 { font-size: 1.5rem; font-weight: 700; margin: 1.5rem 0 1rem; color: #000000; }
+        .markdown-body h2 { font-size: 1.25rem; font-weight: 600; margin: 1.25rem 0 0.75rem; color: #000000; border-bottom: 1px solid #E5E5E5; padding-bottom: 0.5rem; }
+        .markdown-body h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; color: #525252; }
+        .markdown-body p { margin: 0.75rem 0; line-height: 1.75; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
+        .markdown-body ol { list-style-type: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+        .markdown-body li { margin: 0.25rem 0; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; }
+        .markdown-body th, .markdown-body td { border: 1px solid #E5E5E5; padding: 0.5rem 0.75rem; text-align: left; }
+        .markdown-body th { background: #FAFAFA; font-weight: 600; }
+        .markdown-body code { background: #FAFAFA; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.875rem; }
+        .markdown-body pre { background: #000000; color: #FFFFFF; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 1rem 0; }
+        .markdown-body pre code { background: transparent; padding: 0; }
+        .markdown-body blockquote { border-left: 4px solid #000000; padding-left: 1rem; margin: 1rem 0; color: #737373; }
+        .markdown-body hr { border: none; border-top: 1px solid #E5E5E5; margin: 1.5rem 0; }
+        .markdown-body details { margin: 1rem 0; }
+        .markdown-body summary { cursor: pointer; font-weight: 500; color: #000000; }
+        /* Mermaid 图表样式 */
+        .mermaid-container {
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: #ffffff;
+            border-radius: 0.75rem;
+            border: 1px solid #E5E5E5;
+            overflow-x: auto;
+        }
+        /* 渲染失败时的容器样式 */
+        .mermaid-container:has(.mermaid-error),
+        .mermaid-container:has(> div:not(.mermaid)) {
+            border: 1px solid #E5E5E5 !important;
+            background: #FAFAFA !important;
+        }
+        .mermaid-error {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 16px;
+            color: #495057;
+        }
+        /* 渲染失败的图表容器 */
+        .mermaid-failed {
+            border: none !important;
+            outline: none !important;
+            background: transparent !important;
+        }
+        /* 清除所有可能的黑色边框 */
+        .mermaid-container *,
+        .mermaid-container svg,
+        .mermaid-container pre {
+            outline: none !important;
+            box-shadow: none !important;
+        }
+        /* 隐藏 Mermaid 自带的错误显示 */
+        .mermaid-container svg[id^="dmermaid"],
+        .mermaid-container #dmermaid,
+        .mermaid-container .error-icon,
+        .mermaid-container .error-text,
+        svg[id^="mermaid-"][aria-roledescription="error"],
+        #d2h-675640 {
+            display: none !important;
+        }
+        /* 覆盖 Mermaid 错误 SVG 的黑色边框 */
+        .mermaid-container svg[aria-roledescription="error"],
+        .mermaid-container svg rect[stroke="#000"],
+        .mermaid-container svg rect[stroke="black"] {
+            display: none !important;
+            stroke: none !important;
+            border: none !important;
+        }
+        .mermaid-container svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+            background: #ffffff !important;
+            background-color: #ffffff !important;
+        }
+        /* 强制 Mermaid 图表使用白色背景 - 覆盖所有可能的黑色 */
+        .mermaid-container svg > rect:first-child,
+        .mermaid-container svg rect[fill="#000000"],
+        .mermaid-container svg rect[fill="rgb(0, 0, 0)"],
+        .mermaid-container svg rect[fill="black"],
+        .mermaid-container svg .background,
+        .mermaid-container .mermaid > svg > rect:first-of-type {
+            fill: #ffffff !important;
+        }
+        /* 覆盖内联样式的黑色填充 */
+        .mermaid-container svg [style*="fill: rgb(0, 0, 0)"],
+        .mermaid-container svg [style*="fill:rgb(0,0,0)"],
+        .mermaid-container svg [style*="fill:#000000"],
+        .mermaid-container svg [style*="fill: #000000"],
+        .mermaid-container svg [style*="fill:black"],
+        .mermaid-container svg [style*="fill: black"] {
+            fill: #ffffff !important;
+        }
+        /* pie chart 特殊处理 - 第一个 g 元素的 rect 是背景 */
+        .mermaid-container svg g:first-of-type > rect:first-child {
+            fill: #ffffff !important;
+        }
+        .mermaid-container .mermaid-rendered {
+            background: #ffffff !important;
+        }
+        .mermaid-container .error {
+            color: #DC2626;
+            padding: 1rem;
+            background: #FEF2F2;
+            border-radius: 0.5rem;
+        }
+        /* 象限图特殊样式 */
+        .mermaid-container .quadrant { fill-opacity: 0.1; }
+        .mermaid-container .quadrant-label { font-weight: 500; }
+        .mermaid-container .point-label { font-size: 11px; }
+    </style>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-surface-secondary min-h-screen font-sans text-text antialiased">
+    <div x-data="deepVision()" x-cloak class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-surface border-b border-border">
+            <div class="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="relative logo-icon">
+                        <svg class="w-9 h-9" viewBox="0 0 40 40" fill="none">
+                            <!-- 外圈光晕 -->
+                            <circle cx="20" cy="20" r="18" stroke="url(#grad-outer)" stroke-width="1.5" opacity="0.3" class="logo-pulse"/>
+                            <!-- 外圈 -->
+                            <circle cx="20" cy="20" r="15" stroke="url(#grad-ring)" stroke-width="2.5"/>
+                            <!-- 虹膜纹理 -->
+                            <circle cx="20" cy="20" r="11" fill="url(#grad-iris)"/>
+                            <!-- 瞳孔 -->
+                            <circle cx="20" cy="20" r="5" fill="#171717"/>
+                            <!-- 高光 -->
+                            <circle cx="16" cy="16" r="2" fill="white" opacity="0.9"/>
+                            <circle cx="23" cy="18" r="1" fill="white" opacity="0.6"/>
+                            <!-- 渐变定义 -->
+                            <defs>
+                                <linearGradient id="grad-outer" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#404040"/>
+                                    <stop offset="100%" style="stop-color:#737373"/>
+                                </linearGradient>
+                                <linearGradient id="grad-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#171717"/>
+                                    <stop offset="50%" style="stop-color:#262626"/>
+                                    <stop offset="100%" style="stop-color:#404040"/>
+                                </linearGradient>
+                                <radialGradient id="grad-iris" cx="50%" cy="50%" r="50%">
+                                    <stop offset="0%" style="stop-color:#a3a3a3"/>
+                                    <stop offset="50%" style="stop-color:#737373"/>
+                                    <stop offset="100%" style="stop-color:#404040"/>
+                                </radialGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <div class="flex flex-col">
+                        <h1 class="text-xl leading-tight">
+                            <span class="brand-title">Deep</span><span class="brand-title">Vision</span>
+                            <span class="brand-title-cn ml-1.5">深瞳</span>
+                        </h1>
+                        <p class="text-xs text-muted tracking-wide">智能需求调研助手</p>
+                    </div>
+                </div>
+                <!-- 居中诗句 -->
+                <div class="flex-1 flex flex-col justify-center items-center overflow-hidden">
+                    <p class="fangsong-quote text-3xl text-primary transition-all duration-500"
+                       x-text="currentQuote"
+                       :key="currentQuoteIndex">
+                    </p>
+                    <p class="text-sm text-muted mt-1.5 ml-96 transition-all duration-500"
+                       x-text="currentQuoteSource"
+                       :key="currentQuoteIndex + '-source'">
+                    </p>
+                </div>
+                <nav class="flex items-center gap-3">
+                    <!-- AI 状态指示器 -->
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border"
+                         :class="aiAvailable ? 'border-success/20 bg-success/5' : 'border-warning/20 bg-warning/5'">
+                        <div class="w-1.5 h-1.5 rounded-full"
+                             :class="[
+                                 aiAvailable ? 'bg-success' : 'bg-warning',
+                                 webSearching && aiAvailable ? 'breathing-light' : ''
+                             ]"></div>
+                        <span class="text-xs font-medium" x-text="aiAvailable ? 'AI 已启用' : 'AI 未启用'"></span>
+                    </div>
+                    <button @click="switchView('sessions')"
+                            :class="currentView === 'sessions' ? 'bg-[#357BE2] text-white' : 'text-primary hover:bg-surface-secondary'"
+                            class="px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium">
+                        会话管理
+                    </button>
+                    <button @click="switchView('reports')"
+                            :class="currentView === 'reports' ? 'bg-[#357BE2] text-white' : 'text-primary hover:bg-surface-secondary'"
+                            class="px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium">
+                        调研报告
+                    </button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- 流程步骤指示器（仅在调研中显示） -->
+        <template x-if="currentView === 'interview' && currentSession">
+            <div class="bg-white border-b border-gray-200 shadow-sm">
+                <div class="max-w-7xl mx-auto px-4 py-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-8">
+                            <template x-for="(step, idx) in interviewSteps" :key="idx">
+                                <div class="flex items-center gap-2">
+                                    <div :class="getStepClass(idx)" class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium">
+                                        <template x-if="idx < currentStep || (idx === 2 && generatingReport)">
+                                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                            </svg>
+                                        </template>
+                                        <template x-if="idx >= currentStep && !(idx === 2 && generatingReport)">
+                                            <span x-text="idx + 1"></span>
+                                        </template>
+                                    </div>
+                                    <span :class="idx <= currentStep ? 'text-primary font-medium' : 'text-muted'" class="text-sm hidden sm:inline" x-text="step"></span>
+                                    <template x-if="idx < interviewSteps.length - 1">
+                                        <div class="w-8 h-0.5 bg-gray-200 hidden sm:block"></div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                        <button @click="exitInterview()" class="text-muted hover:text-danger text-sm flex items-center gap-1 cursor-pointer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                            退出
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
+
+            <!-- ========== 会话管理视图 ========== -->
+            <template x-if="currentView === 'sessions'">
+                <div class="space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-semibold text-primary">调研会话</h2>
+                            <p class="text-muted text-sm mt-1">管理您的需求调研会话</p>
+                        </div>
+                        <button @click="showNewSessionModal = true"
+                                class="btn-sage-blue text-white px-5 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            新建调研
+                        </button>
+                    </div>
+
+                    <!-- 加载状态 -->
+                    <template x-if="loading">
+                        <div class="text-center py-12">
+                            <svg class="w-8 h-8 mx-auto text-primary animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                            <p class="text-muted mt-2">加载中...</p>
+                        </div>
+                    </template>
+
+                    <!-- 会话列表 -->
+                    <template x-if="!loading">
+                        <div class="grid gap-4">
+                            <template x-for="session in sessions" :key="session.session_id">
+                                <div class="bg-surface border border-border rounded-xl hover:shadow-sm transition-all duration-200 p-6 cursor-pointer hover:shadow-sm/20"
+                                     @click="openSession(session.session_id)">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center gap-3 mb-2 flex-wrap">
+                                                <h3 class="text-lg font-semibold text-primary truncate" x-text="session.topic"></h3>
+                                                <span :class="getStatusBadgeClass(session.status)"
+                                                      class="px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+                                                      x-text="getStatusText(session.status)"></span>
+                                            </div>
+                                            <div class="flex items-center gap-4 text-sm text-muted mb-4">
+                                                <span>创建: <span x-text="formatDate(session.created_at)"></span></span>
+                                                <span>问答: <span x-text="session.interview_count || 0"></span> 条</span>
+                                            </div>
+                                            <!-- 四维度进度条 -->
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                <template x-for="dimKey in dimensionOrder" :key="dimKey">
+                                                    <div class="space-y-1.5 w-full min-w-0">
+                                                        <div class="flex justify-between text-xs">
+                                                            <span class="text-muted truncate" x-text="getDimensionName(dimKey)"></span>
+                                                            <span class="font-medium ml-2 shrink-0" :class="session.dimensions[dimKey].coverage >= 100 ? 'text-primary' : 'text-secondary'" x-text="session.dimensions[dimKey].coverage + '%'"></span>
+                                                        </div>
+                                                        <div class="h-2 bg-gray-100 rounded-full overflow-hidden w-full">
+                                                            <div class="h-full rounded-full progress-bar"
+                                                                 :style="getProgressBarStyle(session.dimensions[dimKey].coverage)"></div>
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0" style="width: 120px;">
+                                            <button @click.stop="continueSession(session.session_id)"
+                                                    x-show="session.status !== 'completed'"
+                                                    class="px-3 py-1.5 bg-cta/10 text-primary rounded-lg text-sm font-medium hover:bg-cta/20 transition-colors cursor-pointer">
+                                                继续
+                                            </button>
+                                            <!-- 占位元素，保持按钮区域固定宽度 -->
+                                            <div x-show="session.status === 'completed'" class="w-[52px]"></div>
+                                            <button @click.stop="confirmDeleteSession(session.session_id)"
+                                                    class="p-2 text-gray-400 hover:text-danger hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                                    aria-label="删除会话">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- 空状态 -->
+                            <template x-if="sessions.length === 0">
+                                <div class="text-center py-16 bg-surface border border-border rounded-xl">
+                                    <svg class="w-20 h-20 mx-auto text-gray-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    <h3 class="text-lg font-medium text-gray-600 mb-2">暂无调研会话</h3>
+                                    <p class="text-muted mb-6">点击"新建调研"开始您的第一次智能需求调研</p>
+                                    <button @click="showNewSessionModal = true"
+                                            class="btn-sage-blue text-white px-6 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer">
+                                        新建调研
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- ========== 调研访谈视图 ========== -->
+            <template x-if="currentView === 'interview' && currentSession">
+                <div class="grid lg:grid-cols-12 gap-6">
+                    <!-- 左侧：进度面板 -->
+                    <div class="lg:col-span-4 xl:col-span-3 space-y-4 pt-7">
+                        <!-- 调研进度 -->
+                        <div class="bg-surface border border-border rounded-xl p-5 sticky top-4">
+                            <h3 class="font-semibold text-primary mb-4 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                </svg>
+                                调研进度
+                            </h3>
+                            <div class="space-y-4">
+                                <template x-for="(dimKey) in dimensionOrder" :key="dimKey">
+                                    <div class="space-y-2" :class="currentDimension === dimKey ? 'bg-cta/5 -mx-2 px-2 py-2 rounded-lg' : ''">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center gap-2">
+                                                <template x-if="currentSession.dimensions[dimKey].coverage >= 100">
+                                                    <svg class="w-5 h-5 text-[#357BE2]" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                                    </svg>
+                                                </template>
+                                                <template x-if="currentSession.dimensions[dimKey].coverage > 0 && currentSession.dimensions[dimKey].coverage < 100">
+                                                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                    </svg>
+                                                </template>
+                                                <template x-if="currentSession.dimensions[dimKey].coverage === 0">
+                                                    <svg class="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16z" clip-rule="evenodd"/>
+                                                    </svg>
+                                                </template>
+                                                <span class="text-sm font-medium" :class="currentDimension === dimKey ? 'text-primary' : ''" x-text="getDimensionName(dimKey)"></span>
+                                            </div>
+                                            <span class="text-sm font-medium" :class="currentSession.dimensions[dimKey].coverage >= 100 ? 'text-primary' : 'text-muted'" x-text="currentSession.dimensions[dimKey].coverage + '%'"></span>
+                                        </div>
+                                        <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                            <div class="h-full rounded-full progress-bar"
+                                                 :style="getProgressBarStyle(currentSession.dimensions[dimKey].coverage)"></div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- 总进度 -->
+                            <div class="mt-6 pt-4 border-t border-gray-100">
+                                <div class="flex justify-between text-sm mb-2">
+                                    <span class="text-muted">总体进度</span>
+                                    <span class="font-bold text-primary" x-text="getTotalProgress() + '%'"></span>
+                                </div>
+                                <div class="h-3 bg-gray-100 rounded-full overflow-hidden">
+                                    <div class="h-full rounded-full progress-bar"
+                                         :style="getProgressBarStyle(getTotalProgress())"></div>
+                                </div>
+                            </div>
+
+                            <!-- 操作按钮 -->
+                            <div class="mt-6 space-y-3">
+                                <button x-show="getTotalProgress() >= 50"
+                                        @click="currentStep === 2 ? generateReport() : goToConfirmation()"
+                                        :disabled="currentStep === 2 && generatingReport"
+                                        :class="(currentStep === 2 && generatingReport) ? 'btn-sage-blue opacity-80 cursor-wait' : 'btn-sage-blue cursor-pointer'"
+                                        class="w-full text-white py-2.5 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2">
+                                    <template x-if="currentStep === 2 && generatingReport">
+                                        <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                        </svg>
+                                    </template>
+                                    <template x-if="currentStep === 2 && !generatingReport">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                        </svg>
+                                    </template>
+                                    <template x-if="currentStep !== 2">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                    </template>
+                                    <span x-text="currentStep === 2 ? (generatingReport ? '生成中...' : '生成报告') : '确认需求'"></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 参考文档（仅在文档准备和访谈阶段显示） -->
+                        <template x-if="currentStep < 2">
+                            <div class="bg-surface border border-border rounded-xl p-5">
+                                <h3 class="font-semibold text-primary mb-3 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                    </svg>
+                                    参考文档
+                                </h3>
+                                <template x-if="currentSession.reference_docs && currentSession.reference_docs.length > 0">
+                                    <div class="space-y-2">
+                                        <template x-for="(doc, index) in currentSession.reference_docs" :key="doc.name">
+                                            <div class="flex items-center gap-2 p-2 bg-gray-50 rounded-lg text-sm group">
+                                                <svg class="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                </svg>
+                                                <span class="truncate flex-1" x-text="doc.name"></span>
+                                                <button @click="removeDocument(index)" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all cursor-pointer" title="删除文档">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                                <template x-if="!currentSession.reference_docs || currentSession.reference_docs.length === 0">
+                                    <p class="text-sm text-muted">暂无参考文档</p>
+                                </template>
+                                <label class="mt-3 flex items-center justify-center gap-2 p-3 border-2 border-dashed border-gray-200 rounded-lg hover:border-cta/50 cursor-pointer transition-colors">
+                                    <svg class="w-5 h-5 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                    </svg>
+                                    <span class="text-sm text-muted">上传文档</span>
+                                    <input type="file" class="hidden" @change="uploadDocument($event)" accept=".md,.txt,.pdf,.docx,.xlsx,.pptx">
+                                </label>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- 右侧：访谈区域 -->
+                    <div class="lg:col-span-8 xl:col-span-9 space-y-6">
+                        <!-- Step 0: 文档准备 -->
+                        <template x-if="currentStep === 0">
+                            <div class="bg-surface border border-border rounded-xl p-6">
+                                <h3 class="text-xl font-semibold text-primary mb-2">文档准备</h3>
+                                <p class="text-muted mb-6">您可以上传参考文档帮助我们更好地理解您的需求背景（可选）</p>
+
+                                <div class="grid gap-4 md:grid-cols-2">
+                                    <label class="flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-200 rounded-xl hover:border-cta cursor-pointer transition-colors group">
+                                        <svg class="w-12 h-12 text-gray-300 group-hover:text-primary mb-3 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                        </svg>
+                                        <span class="font-medium text-secondary group-hover:text-primary">上传参考文档</span>
+                                        <span class="text-xs text-muted mt-1">支持 .md, .txt, .pdf, .docx, .xlsx, .pptx</span>
+                                        <input type="file" class="hidden" @change="uploadDocument($event)" accept=".md,.txt,.pdf,.docx,.xlsx,.pptx" multiple>
+                                    </label>
+
+                                    <div class="flex flex-col p-4 border-2 border-gray-200 rounded-xl bg-gray-50">
+                                        <template x-if="currentSession.reference_docs && currentSession.reference_docs.length > 0">
+                                            <div>
+                                                <div class="flex items-center gap-2 mb-3">
+                                                    <div class="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                                                        <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                                        </svg>
+                                                    </div>
+                                                    <span class="font-medium text-primary" x-text="currentSession.reference_docs.length + ' 个文档已上传'"></span>
+                                                </div>
+                                                <div class="space-y-2 max-h-48 overflow-y-auto">
+                                                    <template x-for="(doc, index) in currentSession.reference_docs" :key="doc.name">
+                                                        <div class="flex items-center gap-2 p-2 bg-white rounded-lg text-sm group">
+                                                            <svg class="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                            </svg>
+                                                            <span class="truncate flex-1" x-text="doc.name"></span>
+                                                            <button @click="removeDocument(index)" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all cursor-pointer" title="删除文档">
+                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <template x-if="!currentSession.reference_docs || currentSession.reference_docs.length === 0">
+                                            <div class="text-center flex flex-col items-center justify-center h-full min-h-[160px]">
+                                                <div class="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
+                                                    <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                    </svg>
+                                                </div>
+                                                <span class="text-muted">暂无上传文档</span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="flex justify-end mt-6">
+                                    <button @click="startInterview()"
+                                            class="btn-sage-blue text-white px-8 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer flex items-center gap-2">
+                                        开始访谈
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Step 1: 选择式访谈 -->
+                        <template x-if="currentStep === 1">
+                            <div class="space-y-6">
+                                <!-- 加载问题中 -->
+                                <template x-if="loadingQuestion">
+                                    <div class="bg-surface border border-border rounded-xl p-8">
+                                        <div class="flex flex-col items-center justify-center py-8">
+                                            <svg class="w-12 h-12 animate-spin mb-4" fill="none" viewBox="0 0 24 24">
+                                                <circle cx="12" cy="12" r="10" stroke="#EDF4FE" stroke-width="4"/>
+                                                <path fill="#357BE2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                            </svg>
+                                            <p class="text-lg font-medium text-primary mb-2">AI 正在思考...</p>
+                                            <p class="text-sm text-muted" x-text="isGoingPrev ? '正在为您回到上一个问题' : '正在根据您的回答生成下一个问题'"></p>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- 当前问题 -->
+                                <template x-if="!loadingQuestion">
+                                <div class="bg-surface border border-border rounded-xl p-6">
+                                    <!-- 服务错误提示 -->
+                                    <template x-if="currentQuestion.serviceError">
+                                        <div class="text-center py-12">
+                                            <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                                <svg class="w-8 h-8 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                                </svg>
+                                            </div>
+                                            <h3 class="text-lg font-semibold text-primary mb-2" x-text="currentQuestion.errorTitle || '服务错误'"></h3>
+                                            <p class="text-muted mb-6" x-text="currentQuestion.errorDetail || '请稍后重试'"></p>
+                                            <button @click="fetchNextQuestion()"
+                                                    class="bg-primary hover:bg-cta-hover text-white px-6 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer">
+                                                重试
+                                            </button>
+                                        </div>
+                                    </template>
+
+                                    <!-- 正常问题内容 -->
+                                    <template x-if="!currentQuestion.serviceError">
+                                    <div>
+                                    <!-- 追问提示 -->
+                                    <template x-if="currentQuestion.isFollowUp">
+                                        <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                            <div class="flex items-start gap-2">
+                                                <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                                <div>
+                                                    <p class="text-sm font-medium text-amber-700">智能追问</p>
+                                                    <p class="text-xs text-amber-600" x-text="currentQuestion.followUpReason || '基于您的回答，AI 认为需要进一步了解细节'"></p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <!-- 冲突检测提示 -->
+                                    <template x-if="currentQuestion.conflictDetected">
+                                        <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                            <div class="flex items-start gap-2">
+                                                <svg class="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                                </svg>
+                                                <div>
+                                                    <p class="text-sm font-medium text-red-700">发现潜在冲突</p>
+                                                    <p class="text-xs text-red-600" x-text="currentQuestion.conflictDescription || '您的回答与参考文档中的内容存在差异，请确认'"></p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <div class="flex items-center gap-3 mb-4">
+                                        <span class="px-3 py-1 bg-cta/10 text-primary rounded-lg text-sm font-medium" x-text="getDimensionName(currentDimension)"></span>
+                                        <span class="text-muted text-sm">问题 <span x-text="getQuestionNumber()"></span></span>
+                                        <!-- 单选/多选提示 -->
+                                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                            <span x-text="currentQuestion.multiSelect ? '可多选' : '单选'"></span>
+                                        </span>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-primary mb-6" x-text="currentQuestion.text"></h3>
+
+                                    <!-- 选项 -->
+                                    <div class="space-y-3">
+                                        <template x-for="(option, index) in currentQuestion.options" :key="index">
+                                            <div @click="toggleOption(option)"
+                                                 :class="isOptionSelected(option) ? 'border-[#EDF4FE] bg-cta/5 ring-2 ring-cta/20' : 'border-gray-200 hover:border-cta/50'"
+                                                 class="p-4 border-2 rounded-xl cursor-pointer transition-all duration-200">
+                                                <div class="flex items-center gap-3">
+                                                    <!-- 单选：圆形 / 多选：方形 -->
+                                                    <template x-if="!currentQuestion.multiSelect">
+                                                        <div :class="isOptionSelected(option) ? 'border-[#357BE2] bg-[#357BE2]' : 'border-gray-300'"
+                                                             class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors">
+                                                            <div x-show="isOptionSelected(option)" class="w-2 h-2 rounded-full bg-white"></div>
+                                                        </div>
+                                                    </template>
+                                                    <template x-if="currentQuestion.multiSelect">
+                                                        <div :class="isOptionSelected(option) ? 'border-[#357BE2] bg-[#357BE2]' : 'border-gray-300'"
+                                                             class="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors">
+                                                            <svg x-show="isOptionSelected(option)" class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                                            </svg>
+                                                        </div>
+                                                    </template>
+                                                    <span class="font-medium" x-text="option"></span>
+                                                </div>
+                                            </div>
+                                        </template>
+
+                                        <!-- 其他选项 - 只在有选项时显示 -->
+                                        <div x-show="currentQuestion.options && currentQuestion.options.length > 0"
+                                             :class="otherSelected ? 'border-[#EDF4FE] bg-cta/5 ring-2 ring-cta/20' : 'border-gray-200 hover:border-cta/50'"
+                                             class="p-4 border-2 rounded-xl transition-all duration-200">
+                                            <div class="flex items-center gap-3 mb-3 cursor-pointer" @click="toggleOther()">
+                                                <!-- 单选：圆形 / 多选：方形 -->
+                                                <template x-if="!currentQuestion.multiSelect">
+                                                    <div :class="otherSelected ? 'border-[#357BE2] bg-[#357BE2]' : 'border-gray-300'"
+                                                         class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors">
+                                                        <div x-show="otherSelected" class="w-2 h-2 rounded-full bg-white"></div>
+                                                    </div>
+                                                </template>
+                                                <template x-if="currentQuestion.multiSelect">
+                                                    <div :class="otherSelected ? 'border-[#357BE2] bg-[#357BE2]' : 'border-gray-300'"
+                                                         class="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors">
+                                                        <svg x-show="otherSelected" class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                                        </svg>
+                                                    </div>
+                                                </template>
+                                                <span class="font-medium">其他</span>
+                                            </div>
+                                            <input type="text" x-ref="otherInput"
+                                                   x-model="otherAnswerText"
+                                                   @focus="otherSelected = true; if (!currentQuestion.multiSelect) { selectedAnswers = []; }"
+                                                   placeholder="请输入您的答案..."
+                                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cta/50 focus:border-cta">
+                                        </div>
+                                    </div>
+
+                                    <div class="flex justify-between items-center mt-6 pt-4 border-t border-gray-100">
+                                        <button x-show="canGoPrevQuestion()"
+                                                @click="goPrevQuestion()"
+                                                class="text-muted hover:text-secondary flex items-center gap-1 cursor-pointer">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                            </svg>
+                                            上一题
+                                        </button>
+                                        <div x-show="!canGoPrevQuestion()"></div>
+                                        <button x-show="currentQuestion.options && currentQuestion.options.length > 0"
+                                                @click="submitAnswer()"
+                                                :disabled="!canSubmitAnswer()"
+                                                :class="canSubmitAnswer() ? 'btn-sage-blue cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
+                                                class="text-white px-8 py-2.5 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+                                            下一题
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    </div>
+                                    </template>
+                                </div>
+                                </template>
+
+                                <!-- 已完成的问答记录 -->
+                                <div x-show="currentSession.interview_log && currentSession.interview_log.length > 0"
+                                     class="bg-surface border border-border rounded-xl p-6">
+                                    <h3 class="font-semibold text-primary mb-4 flex items-center gap-2">
+                                        <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                        </svg>
+                                        已收集的回答 (<span x-text="currentSession.interview_log.length"></span>)
+                                    </h3>
+                                    <div class="space-y-3 max-h-96 overflow-y-auto">
+                                        <template x-for="(log, index) in currentSession.interview_log.slice().reverse()" :key="index">
+                                            <div class="p-4 bg-gray-50 rounded-lg">
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <span class="px-2 py-0.5 bg-cta/10 text-primary rounded text-xs font-medium" x-text="getDimensionName(log.dimension)"></span>
+                                                </div>
+                                                <p class="text-sm text-muted mb-1" x-text="'Q: ' + log.question"></p>
+                                                <p class="font-medium text-primary" x-text="'A: ' + log.answer"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Step 2: 需求确认 -->
+                        <template x-if="currentStep === 2">
+                            <div class="bg-surface border border-border rounded-xl p-6">
+                                <h3 class="text-xl font-semibold text-primary mb-2">需求摘要确认</h3>
+                                <p class="text-muted mb-6">请确认以下收集的需求信息是否准确</p>
+
+                                <div class="space-y-6">
+                                    <template x-for="dimKey in dimensionOrder" :key="dimKey">
+                                        <div class="border border-gray-200 rounded-lg p-4">
+                                            <h4 class="font-semibold text-primary mb-3 flex items-center gap-2">
+                                                <span class="w-6 h-6 rounded-full flex items-center justify-center" style="background-color: #357BE2">
+                                                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                                    </svg>
+                                                </span>
+                                                <span x-text="getDimensionName(dimKey)"></span>
+                                                <span class="text-sm text-muted font-normal" x-text="'(' + currentSession.dimensions[dimKey].coverage + '%)'"></span>
+                                            </h4>
+                                            <div class="space-y-2">
+                                                <template x-for="log in currentSession.interview_log.filter(l => l.dimension === dimKey)" :key="log.timestamp">
+                                                    <div class="flex items-start gap-2 text-sm">
+                                                        <svg class="w-4 h-4 text-primary shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                                        </svg>
+                                                        <span><strong x-text="log.answer"></strong> - <span class="text-muted" x-text="log.question"></span></span>
+                                                    </div>
+                                                </template>
+                                                <template x-if="currentSession.interview_log.filter(l => l.dimension === dimKey).length === 0">
+                                                    <p class="text-sm text-muted italic">该维度暂无收集数据</p>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <div class="flex justify-between items-center mt-8 pt-4 border-t border-gray-100">
+                                    <button @click="currentStep = 1"
+                                            class="text-muted hover:text-secondary flex items-center gap-1 cursor-pointer">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                        </svg>
+                                        返回继续访谈
+                                    </button>
+                                    <button @click="generateReport()"
+                                            :disabled="generatingReport"
+                                            class="btn-sage-blue disabled:bg-gray-300 text-white px-8 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer flex items-center gap-2">
+                                        <template x-if="generatingReport">
+                                            <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                            </svg>
+                                        </template>
+                                        <template x-if="!generatingReport">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                            </svg>
+                                        </template>
+                                        <span x-text="generatingReport ? '生成中...' : '生成报告'"></span>
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <!-- ========== 报告视图 ========== -->
+            <template x-if="currentView === 'reports'">
+                <div class="space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-semibold text-primary">调研报告</h2>
+                            <p class="text-muted text-sm mt-1">查看和管理已生成的调研报告</p>
+                        </div>
+                    </div>
+
+                    <template x-if="!selectedReport">
+                        <div class="grid gap-4">
+                            <template x-for="report in reports" :key="report.name">
+                                <div class="bg-surface border border-border rounded-xl hover:shadow-sm transition-all duration-200 p-5 hover:shadow-sm/20">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-4 flex-1 cursor-pointer" @click="viewReport(report.name)">
+                                            <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                                                <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h3 class="font-semibold text-primary" x-text="report.name"></h3>
+                                                <p class="text-sm text-muted" x-text="formatDate(report.created_at)"></p>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <button @click.stop="viewReport(report.name)"
+                                                    class="p-2 text-gray-400 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+                                                    aria-label="查看报告">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                                </svg>
+                                            </button>
+                                            <button @click.stop="confirmDeleteReport(report.name)"
+                                                    class="p-2 text-gray-400 hover:text-danger hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                                    aria-label="删除报告">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="reports.length === 0">
+                                <div class="text-center py-16 bg-surface border border-border rounded-xl">
+                                    <svg class="w-20 h-20 mx-auto text-gray-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    <h3 class="text-lg font-medium text-gray-600 mb-2">暂无调研报告</h3>
+                                    <p class="text-muted">完成调研后会在这里显示生成的报告</p>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- 报告详情 -->
+                    <template x-if="selectedReport">
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <button @click="selectedReport = null" class="text-primary hover:text-primary-hover flex items-center gap-1 cursor-pointer">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                    </svg>
+                                    返回列表
+                                </button>
+                                <button @click="downloadReport()" class="btn-sage-blue text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
+                                    下载报告
+                                </button>
+                            </div>
+                            <div class="bg-surface border border-border rounded-xl p-8">
+                                <div class="markdown-body"
+                                     x-html="renderMarkdown(reportContent)"
+                                     x-effect="reportContent && setTimeout(() => onReportRendered(), 150)">
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </main>
+
+        <!-- ========== 新建会话弹窗 ========== -->
+        <div x-show="showNewSessionModal"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0"
+             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+             @click.self="showNewSessionModal = false"
+             @keydown.escape.window="showNewSessionModal = false">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0 scale-95"
+                 x-transition:enter-end="opacity-100 scale-100">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-semibold text-primary">新建调研会话</h3>
+                    <button @click="showNewSessionModal = false" class="text-gray-400 hover:text-gray-600 cursor-pointer">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <form @submit.prevent="createNewSession()">
+                    <div class="mb-4">
+                        <label for="newTopic" class="block text-sm font-medium text-secondary mb-2">调研主题 <span class="text-danger">*</span></label>
+                        <input type="text" id="newTopic" x-model="newSessionTopic"
+                               placeholder="例如：CRM系统需求调研、移动App功能规划"
+                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cta/50 focus:border-cta"
+                               required>
+                        <p class="text-xs text-muted mt-1">简洁描述本次调研的主题或项目名称</p>
+                    </div>
+                    <div class="flex gap-3 justify-end pt-2">
+                        <button type="button" @click="showNewSessionModal = false"
+                                class="px-5 py-2.5 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors duration-200 cursor-pointer">
+                            取消
+                        </button>
+                        <button type="submit"
+                                :disabled="!newSessionTopic.trim()"
+                                :class="newSessionTopic.trim() ? 'btn-sage-blue cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
+                                class="px-5 py-2.5 text-white rounded-lg font-medium transition-colors duration-200">
+                            开始调研
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ========== 删除确认弹窗 ========== -->
+        <div x-show="showDeleteModal"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+             @click.self="showDeleteModal = false">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                <div class="text-center">
+                    <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-6 h-6 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-primary mb-2">确认删除</h3>
+                    <p class="text-muted mb-6">确定要删除这个会话吗？此操作无法撤销。</p>
+                    <div class="flex gap-3 justify-center">
+                        <button @click="showDeleteModal = false"
+                                class="px-5 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors cursor-pointer">
+                            取消
+                        </button>
+                        <button @click="deleteSession()"
+                                class="px-5 py-2 bg-danger hover:bg-red-700 text-white rounded-lg font-medium transition-colors cursor-pointer">
+                            删除
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 删除报告确认弹窗 ========== -->
+        <div x-show="showDeleteReportModal"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+             @click.self="showDeleteReportModal = false">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                <div class="text-center">
+                    <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-6 h-6 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-primary mb-2">确认删除报告</h3>
+                    <p class="text-muted mb-6">确定要删除这个报告吗？此操作无法撤销。</p>
+                    <div class="flex gap-3 justify-center">
+                        <button @click="showDeleteReportModal = false"
+                                class="px-5 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors cursor-pointer">
+                            取消
+                        </button>
+                        <button @click="deleteReport()"
+                                class="px-5 py-2 bg-danger hover:bg-red-700 text-white rounded-lg font-medium transition-colors cursor-pointer">
+                            删除
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast 通知 -->
+        <div x-show="toast.show"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 translate-y-2"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 translate-y-2"
+             class="fixed bottom-6 right-6 z-50">
+            <div :class="toast.type === 'success' ? 'bg-success' : toast.type === 'error' ? 'bg-danger' : 'bg-cta'"
+                 class="text-white px-5 py-3 rounded-lg shadow-sm flex items-center gap-3">
+                <template x-if="toast.type === 'success'">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                </template>
+                <template x-if="toast.type === 'error'">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                </template>
+                <span x-text="toast.message"></span>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-gray-200 py-4 mt-auto">
+            <div class="max-w-7xl mx-auto px-4 text-center text-sm text-muted">
+                Deep Vision 深瞳 - 智能需求调研助手 | 基于选择式交互深度挖掘真实需求
+            </div>
+        </footer>
+    </div>
+
+    <!-- 前端配置文件 -->
+    <script src="site-config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+"""
+Deep Vision 配置文件示例
+
+使用说明：
+1. 复制此文件并重命名为 config.py
+2. 填入实际的 API Key 和其他配置值
+3. config.py 已被添加到 .gitignore，不会被提交到版本控制
+
+注意：请勿在此示例文件中填入真实的 API Key！
+"""
+
+# ============ 大模型 API 配置 ============
+
+# Anthropic API 配置
+# 从环境变量获取或直接填入（不推荐直接填入，建议使用环境变量）
+ANTHROPIC_API_KEY = "your-anthropic-api-key-here"
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"  # 或使用代理地址
+
+# 模型配置
+MODEL_NAME = "claude-sonnet-4-20250514"  # 可选: claude-3-opus, claude-3-sonnet, claude-3-haiku
+
+# Token 限制配置
+MAX_TOKENS_DEFAULT = 2000      # 默认最大 token 数
+MAX_TOKENS_QUESTION = 500      # 生成问题时的最大 token 数
+MAX_TOKENS_REPORT = 4000       # 生成报告时的最大 token 数
+
+# ============ 服务器配置 ============
+
+# Flask 服务器配置
+SERVER_HOST = "0.0.0.0"        # 监听地址，0.0.0.0 表示所有网卡
+SERVER_PORT = 5001             # 监听端口
+DEBUG_MODE = True              # 是否开启调试模式
+
+# ============ 功能开关 ============
+
+# 是否启用 AI 功能（如果为 False，将使用模拟数据）
+ENABLE_AI = True
+
+# 是否启用调试日志
+ENABLE_DEBUG_LOG = True
+
+# 是否启用联网搜索（需要配置 ZHIPU_API_KEY）
+ENABLE_WEB_SEARCH = True
+
+# ============ 搜索 API 配置 ============
+
+# 智谱AI Web Search API 配置
+# 获取 API Key: https://open.bigmodel.cn/
+ZHIPU_API_KEY = "your-zhipu-api-key-here"
+ZHIPU_SEARCH_ENGINE = "search_pro"  # 搜索引擎：search_std(基础版), search_pro(高阶版), search_pro_sogou(搜狗), search_pro_quark(夸克)
+
+# 搜索配置
+SEARCH_MAX_RESULTS = 3        # 每次搜索返回的最大结果数
+SEARCH_TIMEOUT = 10           # 搜索超时时间（秒）

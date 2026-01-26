@@ -1,0 +1,1045 @@
+/**
+ * Deep Vision - AI 驱动的智能需求调研前端
+ *
+ * 核心功能：
+ * - 调用后端 AI API 动态生成问题和选项
+ * - 支持智能追问（挖掘本质需求）
+ * - 支持冲突检测（与参考文档对比）
+ * - 生成专业调研报告
+ */
+
+// 从配置文件获取 API 地址，如果配置文件未加载则使用默认值
+const API_BASE = (typeof SITE_CONFIG !== 'undefined' && SITE_CONFIG.api?.baseUrl)
+    ? SITE_CONFIG.api.baseUrl
+    : 'http://localhost:5001/api';
+
+function deepVision() {
+    return {
+        // ============ 状态 ============
+        currentView: 'sessions',
+        loading: false,
+        loadingQuestion: false,
+        isGoingPrev: false,
+        generatingReport: false,
+        webSearching: false,  // Web Search API 调用状态
+        webSearchPollInterval: null,  // Web Search 状态轮询定时器
+
+        // 服务状态
+        serverStatus: null,
+        aiAvailable: false,
+
+        // 会话相关
+        sessions: [],
+        currentSession: null,
+        newSessionTopic: '',
+        showNewSessionModal: false,
+        showDeleteModal: false,
+        sessionToDelete: null,
+
+        // 报告相关
+        reports: [],
+        selectedReport: null,
+        reportContent: '',
+        showDeleteReportModal: false,
+        reportToDelete: null,
+
+        // 访谈相关
+        interviewSteps: ['文档准备', '选择式访谈', '需求确认'],
+        currentStep: 0,
+        dimensionOrder: ['customer_needs', 'business_process', 'tech_constraints', 'project_constraints'],
+        currentDimension: 'customer_needs',
+
+        // 当前问题（AI 生成）
+        currentQuestion: {
+            text: '',
+            options: [],
+            multiSelect: false,  // 是否多选
+            isFollowUp: false,
+            followUpReason: null,
+            conflictDetected: false,
+            conflictDescription: null,
+            aiGenerated: false
+        },
+        selectedAnswers: [],  // 改用数组支持多选
+        otherAnswerText: '',
+        otherSelected: false,  // "其他"选项是否被选中
+
+        // Toast 通知
+        toast: { show: false, message: '', type: 'success' },
+
+        // 诗句轮播（从配置文件加载）
+        quotes: (typeof SITE_CONFIG !== 'undefined' && SITE_CONFIG.quotes?.items)
+            ? SITE_CONFIG.quotes.items
+            : [
+                { text: '路漫漫其修远兮，吾将上下而求索', source: '——屈原《离骚》' },
+                { text: '问渠那得清如许，为有源头活水来', source: '——朱熹《观书有感》' },
+                { text: '千里之行始于足下，万象之理源于细微', source: '——老子《道德经》' }
+            ],
+        currentQuoteIndex: 0,
+        currentQuote: '',  // 初始化时动态设置
+        currentQuoteSource: '',  // 初始化时动态设置
+
+        // 维度名称
+        dimensionNames: {
+            customer_needs: '客户需求',
+            business_process: '业务流程',
+            tech_constraints: '技术约束',
+            project_constraints: '项目约束'
+        },
+
+        // ============ 初始化 ============
+        async init() {
+            // 初始化诗句轮播
+            if (this.quotes.length > 0) {
+                this.currentQuote = this.quotes[0].text;
+                this.currentQuoteSource = this.quotes[0].source;
+            }
+
+            await this.checkServerStatus();
+            await this.loadSessions();
+            await this.loadReports();
+            this.startQuoteRotation();
+        },
+
+        // 启动诗句轮播
+        startQuoteRotation() {
+            // 如果配置文件禁用了诗句轮播或没有诗句，则不启动
+            if (typeof SITE_CONFIG !== 'undefined' && SITE_CONFIG.quotes?.enabled === false) {
+                return;
+            }
+            if (this.quotes.length === 0) {
+                return;
+            }
+
+            // 从配置文件读取轮播间隔
+            const interval = (typeof SITE_CONFIG !== 'undefined' && SITE_CONFIG.quotes?.interval)
+                ? SITE_CONFIG.quotes.interval
+                : 10000;  // 默认10秒
+
+            setInterval(() => {
+                this.currentQuoteIndex = (this.currentQuoteIndex + 1) % this.quotes.length;
+                this.currentQuote = this.quotes[this.currentQuoteIndex].text;
+                this.currentQuoteSource = this.quotes[this.currentQuoteIndex].source;
+            }, interval);
+        },
+
+        // 检查服务器状态
+        async checkServerStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/status`);
+                if (response.ok) {
+                    this.serverStatus = await response.json();
+                    this.aiAvailable = this.serverStatus.ai_available;
+                    if (!this.aiAvailable) {
+                        this.showToast('AI 功能未启用（需设置 ANTHROPIC_API_KEY）', 'warning');
+                    }
+                }
+            } catch (error) {
+                console.error('服务器连接失败:', error);
+                this.showToast('无法连接到服务器，请确保 server.py 正在运行', 'error');
+            }
+        },
+
+        // 开始轮询 Web Search 状态
+        startWebSearchPolling() {
+            if (this.webSearchPollInterval) return;  // 已在轮询中
+
+            // 从配置文件读取轮询间隔
+            const pollInterval = (typeof SITE_CONFIG !== 'undefined' && SITE_CONFIG.api?.webSearchPollInterval)
+                ? SITE_CONFIG.api.webSearchPollInterval
+                : 200;  // 默认 200ms
+
+            this.webSearchPollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/status/web-search`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.webSearching = data.active;
+                    }
+                } catch (error) {
+                    // 轮询失败时不显示错误，静默处理
+                }
+            }, pollInterval);
+        },
+
+        // 停止轮询 Web Search 状态
+        stopWebSearchPolling() {
+            if (this.webSearchPollInterval) {
+                clearInterval(this.webSearchPollInterval);
+                this.webSearchPollInterval = null;
+            }
+            this.webSearching = false;  // 重置状态
+        },
+
+        // ============ API 调用 ============
+        async apiCall(endpoint, options = {}) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    headers: { 'Content-Type': 'application/json' },
+                    ...options
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '请求失败');
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('API 调用失败:', error);
+                throw error;
+            }
+        },
+
+        // ============ 会话管理 ============
+        async loadSessions() {
+            this.loading = true;
+            try {
+                this.sessions = await this.apiCall('/sessions');
+            } catch (error) {
+                this.showToast('加载会话列表失败', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async createNewSession() {
+            if (!this.newSessionTopic.trim()) return;
+
+            try {
+                const session = await this.apiCall('/sessions', {
+                    method: 'POST',
+                    body: JSON.stringify({ topic: this.newSessionTopic })
+                });
+
+                this.sessions.unshift(session);
+                this.currentSession = session;
+                this.showNewSessionModal = false;
+                this.newSessionTopic = '';
+                this.currentStep = 0;
+                this.currentView = 'interview';
+                this.showToast('会话创建成功', 'success');
+            } catch (error) {
+                this.showToast('创建会话失败', 'error');
+            }
+        },
+
+        async openSession(sessionId) {
+            try {
+                this.currentSession = await this.apiCall(`/sessions/${sessionId}`);
+                this.currentStep = this.currentSession.interview_log.length > 0 ? 1 : 0;
+                this.currentDimension = this.getNextIncompleteDimension();
+                // 先切换到访谈视图，让用户看到加载状态
+                this.currentView = 'interview';
+                if (this.currentStep === 1) {
+                    // 再获取下一个问题（会显示加载动画）
+                    await this.fetchNextQuestion();
+                }
+            } catch (error) {
+                this.showToast('加载会话失败', 'error');
+            }
+        },
+
+        async continueSession(sessionId) {
+            await this.openSession(sessionId);
+        },
+
+        confirmDeleteSession(sessionId) {
+            this.sessionToDelete = sessionId;
+            this.showDeleteModal = true;
+        },
+
+        async deleteSession() {
+            if (!this.sessionToDelete) return;
+
+            try {
+                await this.apiCall(`/sessions/${this.sessionToDelete}`, { method: 'DELETE' });
+                this.sessions = this.sessions.filter(s => s.session_id !== this.sessionToDelete);
+                this.showDeleteModal = false;
+                this.sessionToDelete = null;
+                this.showToast('会话已删除', 'success');
+            } catch (error) {
+                this.showToast('删除会话失败', 'error');
+            }
+        },
+
+        // 确认删除报告
+        confirmDeleteReport(reportName) {
+            this.reportToDelete = reportName;
+            this.showDeleteReportModal = true;
+        },
+
+        // 删除报告
+        async deleteReport() {
+            if (!this.reportToDelete) return;
+
+            try {
+                await this.apiCall(`/reports/${encodeURIComponent(this.reportToDelete)}`, { method: 'DELETE' });
+                this.reports = this.reports.filter(r => r.name !== this.reportToDelete);
+                this.showDeleteReportModal = false;
+                this.reportToDelete = null;
+                this.showToast('报告已删除', 'success');
+            } catch (error) {
+                this.showToast('删除报告失败', 'error');
+            }
+        },
+
+        // ============ 文档上传 ============
+        async uploadDocument(event) {
+            const files = event.target.files;
+            if (!files.length || !this.currentSession) return;
+
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(
+                        `${API_BASE}/sessions/${this.currentSession.session_id}/documents`,
+                        { method: 'POST', body: formData }
+                    );
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        // 刷新会话数据
+                        this.currentSession = await this.apiCall(`/sessions/${this.currentSession.session_id}`);
+                        this.showToast(`文档 ${file.name} 上传成功`, 'success');
+                    } else {
+                        throw new Error('上传失败');
+                    }
+                } catch (error) {
+                    this.showToast(`上传 ${file.name} 失败`, 'error');
+                }
+            }
+
+            event.target.value = '';
+        },
+
+        async removeDocument(index) {
+            if (!this.currentSession || !this.currentSession.reference_docs) return;
+
+            const doc = this.currentSession.reference_docs[index];
+            if (!confirm(`确定要删除文档 "${doc.name}" 吗？`)) return;
+
+            try {
+                const response = await fetch(
+                    `${API_BASE}/sessions/${this.currentSession.session_id}/documents/${encodeURIComponent(doc.name)}`,
+                    { method: 'DELETE' }
+                );
+
+                if (response.ok) {
+                    // 刷新会话数据
+                    this.currentSession = await this.apiCall(`/sessions/${this.currentSession.session_id}`);
+                    this.showToast(`文档 ${doc.name} 已删除`, 'success');
+                } else {
+                    throw new Error('删除失败');
+                }
+            } catch (error) {
+                this.showToast(`删除文档失败`, 'error');
+            }
+        },
+
+        // ============ AI 驱动的访谈流程 ============
+        startInterview() {
+            this.currentStep = 1;
+            this.currentDimension = 'customer_needs';
+            this.fetchNextQuestion();
+        },
+
+        getNextIncompleteDimension() {
+            for (const dim of this.dimensionOrder) {
+                if (this.currentSession.dimensions[dim].coverage < 100) {
+                    return dim;
+                }
+            }
+            return this.dimensionOrder[0];
+        },
+
+        async fetchNextQuestion() {
+            this.loadingQuestion = true;
+            this.startWebSearchPolling();  // 开始轮询 Web Search 状态
+            this.selectedAnswers = [];
+            this.otherAnswerText = '';
+            this.otherSelected = false;
+
+            try {
+                const response = await fetch(`${API_BASE}/sessions/${this.currentSession.session_id}/next-question`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dimension: this.currentDimension })
+                });
+
+                const result = await response.json();
+
+                // 检查是否有错误
+                if (!response.ok || result.error) {
+                    const errorTitle = result.error || '服务错误';
+                    const errorDetail = result.detail || '请稍后重试';
+
+                    // 显示 Toast 提示
+                    this.showToast(errorTitle, 'error');
+
+                    // 设置错误状态
+                    this.currentQuestion = {
+                        text: '',
+                        options: [],
+                        multiSelect: false,
+                        aiGenerated: false,
+                        serviceError: true,
+                        errorTitle: errorTitle,
+                        errorDetail: errorDetail
+                    };
+                    return;
+                }
+
+                if (result.completed) {
+                    // 当前维度已完成，切换到下一个
+                    const currentIdx = this.dimensionOrder.indexOf(this.currentDimension);
+                    for (let i = 1; i <= this.dimensionOrder.length; i++) {
+                        const nextDim = this.dimensionOrder[(currentIdx + i) % this.dimensionOrder.length];
+                        if (this.currentSession.dimensions[nextDim].coverage < 100) {
+                            this.currentDimension = nextDim;
+                            await this.fetchNextQuestion();
+                            return;
+                        }
+                    }
+                    // 所有维度都完成
+                    this.currentQuestion = {
+                        text: '所有问题已完成！您可以确认需求并生成报告。',
+                        options: [],
+                        multiSelect: false,
+                        aiGenerated: false
+                    };
+                } else {
+                    this.currentQuestion = {
+                        text: result.question,
+                        options: result.options || [],
+                        multiSelect: result.multi_select || false,
+                        isFollowUp: result.is_follow_up || false,
+                        followUpReason: result.follow_up_reason,
+                        conflictDetected: result.conflict_detected || false,
+                        conflictDescription: result.conflict_description,
+                        aiGenerated: result.ai_generated || false
+                    };
+                }
+            } catch (error) {
+                console.error('获取问题失败:', error);
+
+                // 网络错误或其他异常
+                const errorTitle = '网络错误';
+                const errorDetail = '无法连接到服务器，请检查网络连接后重试';
+
+                this.showToast(errorTitle, 'error');
+                this.currentQuestion = {
+                    text: '',
+                    options: [],
+                    multiSelect: false,
+                    aiGenerated: false,
+                    serviceError: true,
+                    errorTitle: errorTitle,
+                    errorDetail: errorDetail
+                };
+            } finally {
+                this.loadingQuestion = false;
+                this.stopWebSearchPolling();  // 停止轮询 Web Search 状态
+                this.isGoingPrev = false;
+            }
+        },
+
+        canSubmitAnswer() {
+            if (!this.currentQuestion.text || this.currentQuestion.options.length === 0) {
+                return false;
+            }
+
+            if (this.currentQuestion.multiSelect) {
+                // 多选模式：至少选择一个选项，或者填写了"其他"
+                const hasSelectedOptions = this.selectedAnswers.length > 0;
+                const hasValidOther = this.otherSelected && this.otherAnswerText.trim().length > 0;
+                return hasSelectedOptions || hasValidOther;
+            } else {
+                // 单选模式：必须选择一个选项，如果选择了"其他"需要填写内容
+                if (this.otherSelected) {
+                    return this.otherAnswerText.trim().length > 0;
+                }
+                return this.selectedAnswers.length > 0;
+            }
+        },
+
+        // 切换选项选择状态
+        toggleOption(option) {
+            if (this.currentQuestion.multiSelect) {
+                // 多选模式：切换选中状态
+                const index = this.selectedAnswers.indexOf(option);
+                if (index > -1) {
+                    this.selectedAnswers.splice(index, 1);
+                } else {
+                    this.selectedAnswers.push(option);
+                }
+            } else {
+                // 单选模式：替换选中项
+                this.selectedAnswers = [option];
+                this.otherSelected = false;
+                this.otherAnswerText = '';
+            }
+        },
+
+        // 检查选项是否被选中
+        isOptionSelected(option) {
+            return this.selectedAnswers.includes(option);
+        },
+
+        // 切换"其他"选项
+        toggleOther() {
+            if (this.currentQuestion.multiSelect) {
+                // 多选模式：切换"其他"选中状态
+                this.otherSelected = !this.otherSelected;
+                if (!this.otherSelected) {
+                    this.otherAnswerText = '';
+                }
+            } else {
+                // 单选模式：选中"其他"，清除其他选项
+                this.selectedAnswers = [];
+                this.otherSelected = true;
+            }
+        },
+
+        async submitAnswer() {
+            if (!this.canSubmitAnswer()) return;
+
+            // 构建答案
+            let answer;
+            if (this.currentQuestion.multiSelect) {
+                // 多选：合并所有选中的答案
+                const answers = [...this.selectedAnswers];
+                if (this.otherSelected && this.otherAnswerText.trim()) {
+                    answers.push(this.otherAnswerText.trim());
+                }
+                answer = answers.join('；');  // 使用中文分号分隔
+            } else {
+                // 单选
+                answer = this.otherSelected ? this.otherAnswerText.trim() : this.selectedAnswers[0];
+            }
+
+            try {
+                const updatedSession = await this.apiCall(
+                    `/sessions/${this.currentSession.session_id}/submit-answer`,
+                    {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            question: this.currentQuestion.text,
+                            answer: answer,
+                            dimension: this.currentDimension,
+                            options: this.currentQuestion.options,
+                            multi_select: this.currentQuestion.multiSelect
+                        })
+                    }
+                );
+
+                this.currentSession = updatedSession;
+
+                // 检查是否需要切换维度
+                if (this.currentSession.dimensions[this.currentDimension].coverage >= 100) {
+                    this.currentDimension = this.getNextIncompleteDimension();
+                }
+
+                // 获取下一个问题
+                await this.fetchNextQuestion();
+
+            } catch (error) {
+                this.showToast('提交回答失败', 'error');
+            }
+        },
+
+        getQuestionNumber() {
+            const answered = this.currentSession.interview_log.filter(
+                l => l.dimension === this.currentDimension
+            ).length;
+            return answered + 1;
+        },
+
+        canGoPrevQuestion() {
+            return this.currentSession && this.currentSession.interview_log.length > 0;
+        },
+
+        async goPrevQuestion() {
+            if (!this.canGoPrevQuestion()) return;
+
+            try {
+                // 先保存要恢复的问题信息（在调用 undo 之前）
+                const lastLog = this.currentSession.interview_log[this.currentSession.interview_log.length - 1];
+                if (!lastLog) {
+                    this.showToast('没有可撤销的问题', 'warning');
+                    return;
+                }
+
+                const undoDimension = lastLog.dimension;
+                const savedQuestion = {
+                    text: lastLog.question,
+                    options: lastLog.options || [],
+                    multiSelect: lastLog.multi_select || false,
+                    isFollowUp: false,
+                    followUpReason: null,
+                    conflictDetected: false,
+                    conflictDescription: null,
+                    aiGenerated: true  // 标记为之前 AI 生成的问题
+                };
+
+                // 调用后端 API 撤销最后一个回答
+                const updatedSession = await this.apiCall(
+                    `/sessions/${this.currentSession.session_id}/undo-answer`,
+                    { method: 'POST' }
+                );
+
+                this.currentSession = updatedSession;
+
+                // 切换到被撤销问题所在的维度
+                this.currentDimension = undoDimension;
+
+                // 标记为返回上一题操作
+                this.isGoingPrev = true;
+
+                // 直接恢复上一题的问题，而不是调用 AI 重新生成
+                this.currentQuestion = savedQuestion;
+                this.selectedAnswers = [];
+                this.otherAnswerText = '';
+                this.otherSelected = false;
+                this.loadingQuestion = false;
+
+                this.showToast('已恢复上一题，请重新作答', 'success');
+            } catch (error) {
+                this.showToast('撤销失败', 'error');
+            } finally {
+                this.isGoingPrev = false;
+            }
+        },
+
+        goToConfirmation() {
+            this.currentStep = 2;
+        },
+
+        // ============ 报告生成（AI 驱动）============
+        async generateReport() {
+            this.generatingReport = true;
+            this.startWebSearchPolling();  // 开始轮询 Web Search 状态
+
+            try {
+                const result = await this.apiCall(
+                    `/sessions/${this.currentSession.session_id}/generate-report`,
+                    { method: 'POST' }
+                );
+
+                if (result.success) {
+                    const aiMsg = result.ai_generated ? '（AI 生成）' : '（模板生成）';
+                    this.showToast(`报告生成成功 ${aiMsg}`, 'success');
+                    this.currentSession.status = 'completed';
+                    await this.loadReports();
+                    this.currentView = 'reports';
+                    // 自动打开新生成的报告
+                    await this.viewReport(result.report_name);
+                } else {
+                    throw new Error('报告生成失败');
+                }
+            } catch (error) {
+                this.showToast('报告生成失败', 'error');
+            } finally {
+                this.generatingReport = false;
+                this.stopWebSearchPolling();  // 停止轮询 Web Search 状态
+            }
+        },
+
+        // ============ 报告查看 ============
+        async loadReports() {
+            try {
+                this.reports = await this.apiCall('/reports');
+            } catch (error) {
+                console.error('加载报告失败:', error);
+            }
+        },
+
+        async viewReport(filename) {
+            try {
+                const data = await this.apiCall(`/reports/${encodeURIComponent(filename)}`);
+                this.reportContent = data.content;
+                this.selectedReport = filename;
+            } catch (error) {
+                this.showToast('加载报告失败', 'error');
+            }
+        },
+
+        // 当报告内容渲染完成后调用（由 x-effect 触发）
+        onReportRendered() {
+            console.log('📄 报告内容已渲染，开始处理 Mermaid 图表');
+            this.renderMermaidCharts();
+        },
+
+        downloadReport() {
+            if (!this.reportContent || !this.selectedReport) return;
+
+            const blob = new Blob([this.reportContent], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = this.selectedReport;
+            a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        renderMarkdown(content) {
+            if (!content) return '';
+
+            if (typeof marked !== 'undefined') {
+                // 使用 marked 渲染 Markdown
+                let html = marked.parse(content);
+
+                // 检测并转换 Mermaid 代码块
+                // 匹配 <pre><code class="language-mermaid">...</code></pre>
+                html = html.replace(
+                    /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
+                    (match, mermaidCode) => {
+                        // 生成唯一 ID
+                        const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+                        // 解码 HTML 实体
+                        const decodedCode = mermaidCode
+                            .replace(/&lt;/g, '<')
+                            .replace(/&gt;/g, '>')
+                            .replace(/&amp;/g, '&')
+                            .replace(/&quot;/g, '"')
+                            .trim();
+
+                        // 返回 Mermaid 容器
+                        return `<div class="mermaid-container">
+                            <pre class="mermaid" id="${id}">${decodedCode}</pre>
+                        </div>`;
+                    }
+                );
+
+                // 注意：不在这里调用 renderMermaidCharts()
+                // 因为在 x-html 绑定中，DOM 可能还没更新
+                // 应该在 viewReport() 中调用
+
+                return html;
+            }
+
+            // 简单的 Markdown 渲染（无 marked.js 时的回退）
+            return content
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/^- (.*$)/gm, '<li>$1</li>')
+                .replace(/\n/g, '<br>');
+        },
+
+        // 渲染页面中的所有 Mermaid 图表
+        async renderMermaidCharts() {
+            if (typeof mermaid === 'undefined') {
+                console.warn('⚠️ Mermaid 库未加载');
+                return;
+            }
+
+            try {
+                // 查找所有 .mermaid 元素
+                const mermaidElements = document.querySelectorAll('.mermaid');
+
+                if (mermaidElements.length === 0) {
+                    console.log('ℹ️ 没有需要渲染的 Mermaid 图表');
+                    return;
+                }
+
+                console.log(`🎨 发现 ${mermaidElements.length} 个 Mermaid 图表，开始渲染...`);
+
+                // 逐个渲染图表
+                let successCount = 0;
+                for (let i = 0; i < mermaidElements.length; i++) {
+                    const element = mermaidElements[i];
+
+                    // 跳过已经渲染为 SVG 的元素
+                    if (element.querySelector('svg')) {
+                        console.log(`  ⏭️  图表 ${i + 1} 已渲染，跳过`);
+                        continue;
+                    }
+
+                    try {
+                        const graphDefinition = element.textContent.trim();
+                        const id = `mermaid-${Date.now()}-${i}`;
+
+                        // 预处理：修复常见的语法问题
+                        let fixedDefinition = graphDefinition;
+
+                        // 修复1：检测 quadrantChart 的中文，自动转换为英文
+                        if (fixedDefinition.includes('quadrantChart')) {
+                            console.log(`  ⚠️  图表 ${i + 1} 是 quadrantChart，检查并修复中文...`);
+
+                            // 替换所有包含冒号的 quadrant 标签（移除冒号后的部分）
+                            fixedDefinition = fixedDefinition
+                                .replace(/quadrant-1\s+[^:\n]*:\s*[^\n]*/g, 'quadrant-1 P1 High Priority')
+                                .replace(/quadrant-2\s+[^:\n]*:\s*[^\n]*/g, 'quadrant-2 P2 Plan')
+                                .replace(/quadrant-3\s+[^:\n]*:\s*[^\n]*/g, 'quadrant-3 P3 Later')
+                                .replace(/quadrant-4\s+[^:\n]*:\s*[^\n]*/g, 'quadrant-4 Low Priority');
+
+                            // 如果没有冒号，则直接替换包含中文的标签
+                            fixedDefinition = fixedDefinition
+                                .replace(/quadrant-1\s+[^\n]*[\u4e00-\u9fa5]+[^\n]*/g, 'quadrant-1 P1 High Priority')
+                                .replace(/quadrant-2\s+[^\n]*[\u4e00-\u9fa5]+[^\n]*/g, 'quadrant-2 P2 Plan')
+                                .replace(/quadrant-3\s+[^\n]*[\u4e00-\u9fa5]+[^\n]*/g, 'quadrant-3 P3 Later')
+                                .replace(/quadrant-4\s+[^\n]*[\u4e00-\u9fa5]+[^\n]*/g, 'quadrant-4 Low Priority');
+
+                            // 替换标题中的中文
+                            fixedDefinition = fixedDefinition
+                                .replace(/title\s+[^\n]*[\u4e00-\u9fa5]+[^\n]*/g, 'title Priority Matrix')
+                                .replace(/x-axis\s+[^\n]*[\u4e00-\u9fa5]+[^\n]*/g, 'x-axis Low --> High')
+                                .replace(/y-axis\s+[^\n]*[\u4e00-\u9fa5]+[^\n]*/g, 'y-axis Low --> High');
+
+                            // 替换中文数据点名称为英文（Req1, Req2, ...）
+                            let reqIndex = 1;
+                            // 匹配任何包含中文的数据点名称（带或不带空格）
+                            fixedDefinition = fixedDefinition.replace(
+                                /^\s*([^\n:]*[\u4e00-\u9fa5]+[^\n:]*?):\s*\[/gm,
+                                (match, chineseName) => {
+                                    const englishName = `Req${reqIndex++}`;
+                                    console.log(`    📝 将 "${chineseName.trim()}" 替换为 "${englishName}"`);
+                                    return `    ${englishName}: [`;
+                                }
+                            );
+
+                            // 确保至少有一个数据点
+                            if (!/\w+:\s*\[\s*[\d.]+\s*,\s*[\d.]+\s*\]/.test(fixedDefinition)) {
+                                console.log(`    ⚠️  未发现数据点，添加默认数据点`);
+                                fixedDefinition += '\n    Sample: [0.5, 0.5]';
+                            }
+
+                            console.log(`  ✏️  已将中文标签转换为英文`);
+                            console.log('  📋 修复后的代码:\n' + fixedDefinition);
+                        }
+
+                        // 修复2：检测 flowchart/graph 中的中文 subgraph ID
+                        if (fixedDefinition.match(/^(graph|flowchart)\s/m)) {
+                            console.log(`  ⚠️  图表 ${i + 1} 是 flowchart/graph，检查并修复中文 subgraph...`);
+
+                            // 检查是否有未闭合的 subgraph（缺少 end）
+                            const subgraphCount = (fixedDefinition.match(/subgraph\s/g) || []).length;
+                            const endCount = (fixedDefinition.match(/\bend\b/g) || []).length;
+                            if (subgraphCount > endCount) {
+                                console.log(`    ⚠️  检测到 ${subgraphCount - endCount} 个未闭合的 subgraph，自动添加 end`);
+                                for (let j = 0; j < subgraphCount - endCount; j++) {
+                                    fixedDefinition += '\n    end';
+                                }
+                            }
+
+                            // 替换中文 subgraph ID 为英文
+                            let subgraphIndex = 1;
+                            fixedDefinition = fixedDefinition.replace(
+                                /subgraph\s+([\u4e00-\u9fa5][^\["\n]*)\[/g,
+                                (match, chineseId) => {
+                                    const englishId = `SG${subgraphIndex++}`;
+                                    console.log(`    📝 将 subgraph "${chineseId.trim()}" ID 替换为 "${englishId}"`);
+                                    return `subgraph ${englishId}[`;
+                                }
+                            );
+
+                            // 替换中文节点 ID 为英文（如 采购部 --> 数据中心）
+                            let nodeIndex = 1;
+                            fixedDefinition = fixedDefinition.replace(
+                                /^\s*([\u4e00-\u9fa5]+)\[/gm,
+                                (match, chineseId) => {
+                                    const englishId = `N${nodeIndex++}`;
+                                    console.log(`    📝 将节点 "${chineseId}" ID 替换为 "${englishId}"`);
+                                    return `    ${englishId}[`;
+                                }
+                            );
+
+                            console.log(`  ✏️  已修复 flowchart 中文 subgraph/节点 ID`);
+                        }
+
+                        // 使用 mermaid.render() 生成 SVG
+                        const { svg } = await mermaid.render(id, fixedDefinition);
+
+                        // 替换元素内容为渲染后的 SVG
+                        element.innerHTML = svg;
+                        element.classList.add('mermaid-rendered');
+
+                        // 后处理：修复黑色背景问题
+                        const svgEl = element.querySelector('svg');
+                        if (svgEl) {
+                            // 设置 SVG 背景为白色
+                            svgEl.style.backgroundColor = '#ffffff';
+                            svgEl.style.background = '#ffffff';
+
+                            // 获取 SVG 的 viewBox 并确保背景完全覆盖
+                            const viewBox = svgEl.getAttribute('viewBox');
+                            if (viewBox) {
+                                const [x, y, width, height] = viewBox.split(' ').map(Number);
+                                // 检查是否已有背景 rect
+                                const firstRect = svgEl.querySelector('rect');
+                                if (firstRect) {
+                                    // 确保第一个 rect 是白色背景
+                                    const fill = firstRect.getAttribute('fill');
+                                    if (!fill || fill === '#000000' || fill === 'black' || fill === 'rgb(0, 0, 0)' || fill === 'none') {
+                                        firstRect.setAttribute('fill', '#ffffff');
+                                        firstRect.style.fill = '#ffffff';
+                                    }
+                                }
+                            }
+
+                            // 查找并修复所有黑色背景的 rect 元素
+                            const rects = svgEl.querySelectorAll('rect');
+                            rects.forEach((rect, idx) => {
+                                const fill = rect.getAttribute('fill') || rect.style.fill;
+                                // 第一个 rect 通常是背景
+                                if (idx === 0) {
+                                    rect.setAttribute('fill', '#ffffff');
+                                    rect.style.fill = '#ffffff';
+                                }
+                                // 其他黑色填充的 rect 也改为白色
+                                if (fill === '#000000' || fill === 'black' || fill === 'rgb(0, 0, 0)') {
+                                    rect.setAttribute('fill', '#ffffff');
+                                    rect.style.fill = '#ffffff';
+                                }
+                            });
+
+                            // 移除可能的 style 标签中的黑色背景
+                            const styles = svgEl.querySelectorAll('style');
+                            styles.forEach(style => {
+                                style.textContent = style.textContent.replace(/background:\s*#000000/g, 'background: #ffffff');
+                                style.textContent = style.textContent.replace(/background-color:\s*#000000/g, 'background-color: #ffffff');
+                            });
+                        }
+
+                        successCount++;
+                        console.log(`  ✅ 图表 ${i + 1}/${mermaidElements.length} 渲染成功`);
+                    } catch (error) {
+                        console.error(`  ❌ 图表 ${i + 1} 渲染失败:`, error);
+                        // 清空所有内容（包括 Mermaid 可能残留的错误 SVG）
+                        element.innerHTML = '';
+                        // 同时清除父容器中可能残留的 SVG
+                        const parent = element.closest('.mermaid-container');
+                        if (parent) {
+                            const orphanSvgs = parent.querySelectorAll('svg');
+                            orphanSvgs.forEach(svg => svg.remove());
+                        }
+                        // 清除页面中 Mermaid 可能创建的临时元素
+                        document.querySelectorAll('svg[id^="dmermaid"], #dmermaid').forEach(el => el.remove());
+                        // 显示友好的错误提示
+                        element.innerHTML = `<div class="mermaid-error">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <svg width="20" height="20" fill="none" stroke="#6c757d" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <span style="font-weight: 500;">图表暂无法显示</span>
+                            </div>
+                            <p style="font-size: 13px; margin: 0; color: #6c757d;">该图表语法需要调整，请参阅报告原文查看数据</p>
+                        </div>`;
+                        // 移除可能的黑色边框样式
+                        element.style.border = 'none';
+                        element.style.outline = 'none';
+                        element.classList.remove('mermaid');
+                        element.classList.add('mermaid-failed');
+                    }
+                }
+
+                console.log(`✅ Mermaid 渲染完成：${successCount}/${mermaidElements.length} 成功`);
+            } catch (error) {
+                console.error('❌ Mermaid 渲染过程失败:', error);
+            }
+        },
+
+        // ============ 工具方法 ============
+        switchView(view) {
+            this.currentView = view;
+            this.selectedReport = null;
+            if (view === 'sessions') {
+                this.loadSessions();
+            } else if (view === 'reports') {
+                this.loadReports();
+            }
+        },
+
+        exitInterview() {
+            this.currentView = 'sessions';
+            this.currentSession = null;
+            this.loadSessions();
+        },
+
+        getTotalProgress() {
+            if (!this.currentSession) return 0;
+            const dims = Object.values(this.currentSession.dimensions);
+            const total = dims.reduce((sum, d) => sum + (d.coverage || 0), 0);
+            return Math.round(total / dims.length);
+        },
+
+        getDimensionName(key) {
+            return this.dimensionNames[key] || key;
+        },
+
+        getStatusBadgeClass(status) {
+            const classes = {
+                'in_progress': 'status-in-progress',
+                'completed': 'status-completed',
+                'paused': 'bg-yellow-100 text-yellow-700'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-700';
+        },
+
+        getStatusText(status) {
+            const texts = {
+                'in_progress': '进行中',
+                'completed': '已完成',
+                'paused': '已暂停'
+            };
+            return texts[status] || status;
+        },
+
+        // 根据百分比计算进度条颜色
+        getProgressColor(percentage) {
+            // 100% 时使用鼠尾草蓝（从配置文件读取），与完成状态图标保持一致
+            if (percentage >= 100) {
+                return (typeof SITE_CONFIG !== 'undefined' && SITE_CONFIG.colors?.progressComplete)
+                    ? SITE_CONFIG.colors.progressComplete
+                    : '#357BE2';  // 默认鼠尾草蓝
+            }
+
+            // 0-99%: 从浅灰 (#D4D4D4) 渐变到深灰 (#525252)
+            const startColor = { r: 212, g: 212, b: 212 }; // 浅灰
+            const endColor = { r: 82, g: 82, b: 82 };      // 深灰（不是纯黑）
+
+            const ratio = Math.min(Math.max(percentage, 0), 100) / 100;
+
+            const r = Math.round(startColor.r + (endColor.r - startColor.r) * ratio);
+            const g = Math.round(startColor.g + (endColor.g - startColor.g) * ratio);
+            const b = Math.round(startColor.b + (endColor.b - startColor.b) * ratio);
+
+            return `rgb(${r}, ${g}, ${b})`;
+        },
+
+        getProgressBarStyle(percentage) {
+            return `width: ${percentage}%; background-color: ${this.getProgressColor(percentage)}`;
+        },
+
+        getStepClass(idx) {
+            if (idx < this.currentStep || (idx === 2 && this.generatingReport)) {
+                return 'bg-[#357BE2] text-white';
+            } else if (idx === this.currentStep) {
+                return 'bg-cta text-white';
+            }
+            return 'bg-gray-200 text-gray-500';
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('zh-CN', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        },
+
+        showToast(message, type = 'success') {
+            this.toast = { show: true, message, type };
+            setTimeout(() => {
+                this.toast.show = false;
+            }, 4000);
+        }
+    };
+}
