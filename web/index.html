@@ -154,15 +154,20 @@
             .progress-bar, .transition-all { transition: none; }
         }
         /* Markdown 样式 */
-        .markdown-body h1 { font-size: 1.5rem; font-weight: 700; margin: 1.5rem 0 1rem; color: #000000; }
-        .markdown-body h2 { font-size: 1.25rem; font-weight: 600; margin: 1.25rem 0 0.75rem; color: #000000; border-bottom: 1px solid #E5E5E5; padding-bottom: 0.5rem; }
-        .markdown-body h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; color: #525252; }
+        .markdown-body h1 { font-size: 1.25rem; font-weight: 700; margin: 1.5rem 0 1rem; color: #000000; }
+        .markdown-body h2 { font-size: 1.125rem; font-weight: 600; margin: 1.25rem 0 0.75rem; color: #000000; border-bottom: 1px solid #E5E5E5; padding-bottom: 0.5rem; }
+        .markdown-body h3 { font-size: 1rem; font-weight: 600; margin: 1rem 0 0.5rem; color: #525252; }
+        @media (min-width: 768px) {
+            .markdown-body h1 { font-size: 1.5rem; }
+            .markdown-body h2 { font-size: 1.25rem; }
+            .markdown-body h3 { font-size: 1.1rem; }
+        }
         .markdown-body p { margin: 0.75rem 0; line-height: 1.75; }
         .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
         .markdown-body ol { list-style-type: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
         .markdown-body li { margin: 0.25rem 0; }
-        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; }
-        .markdown-body th, .markdown-body td { border: 1px solid #E5E5E5; padding: 0.5rem 0.75rem; text-align: left; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .markdown-body th, .markdown-body td { border: 1px solid #E5E5E5; padding: 0.5rem 0.75rem; text-align: left; white-space: nowrap; }
         .markdown-body th { background: #FAFAFA; font-weight: 600; }
         .markdown-body code { background: #FAFAFA; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.875rem; }
         .markdown-body pre { background: #000000; color: #FFFFFF; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 1rem 0; }
@@ -174,11 +179,17 @@
         /* Mermaid 图表样式 */
         .mermaid-container {
             margin: 1.5rem 0;
-            padding: 1.5rem;
+            padding: 1rem;
             background: #ffffff;
             border-radius: 0.75rem;
             border: 1px solid #E5E5E5;
             overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        @media (min-width: 768px) {
+            .mermaid-container {
+                padding: 1.5rem;
+            }
         }
         /* 渲染失败时的容器样式 */
         .mermaid-container:has(.mermaid-error),
@@ -266,14 +277,22 @@
         .mermaid-container .quadrant { fill-opacity: 0.1; }
         .mermaid-container .quadrant-label { font-weight: 500; }
         .mermaid-container .point-label { font-size: 11px; }
+        /* iOS safe area support */
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0); }
+        /* Minimum touch target size */
+        @media (pointer: coarse) {
+            button, a, input[type="checkbox"], input[type="radio"] {
+                min-height: 44px;
+            }
+        }
     </style>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="bg-surface-secondary min-h-screen font-sans text-text antialiased">
+<body class="bg-surface-secondary min-h-screen font-sans text-text antialiased pb-safe">
     <div x-data="deepVision()" x-cloak class="min-h-screen flex flex-col">
         <!-- Header -->
         <header class="bg-surface border-b border-border">
-            <div class="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+            <div class="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-5 flex items-center justify-between">
                 <div class="flex items-center gap-3">
                     <div class="relative logo-icon">
                         <svg class="w-9 h-9" viewBox="0 0 40 40" fill="none">
@@ -312,40 +331,43 @@
                             <span class="brand-title">Deep</span><span class="brand-title">Vision</span>
                             <span class="brand-title-cn ml-1.5">深瞳</span>
                         </h1>
-                        <p class="text-xs text-muted tracking-wide">智能需求调研助手</p>
+                        <p class="text-xs text-muted tracking-wide">见微，知深</p>
                     </div>
                 </div>
-                <!-- 居中诗句 -->
-                <div class="flex-1 flex flex-col justify-center items-center overflow-hidden">
-                    <p class="fangsong-quote text-3xl text-primary transition-all duration-500"
+                <!-- 居中诗句 - 仅在 lg 及以上屏幕显示 -->
+                <div class="hidden lg:flex flex-1 flex-col justify-center items-center overflow-hidden h-14">
+                    <p class="fangsong-quote text-xl xl:text-2xl 2xl:text-3xl text-primary transition-all duration-500 text-center px-4"
                        x-text="currentQuote"
                        :key="currentQuoteIndex">
                     </p>
-                    <p class="text-sm text-muted mt-1.5 ml-96 transition-all duration-500"
+                    <p class="text-sm text-muted mt-1.5 transition-all duration-500 text-right w-full pr-8"
+                       x-show="currentQuoteSource"
                        x-text="currentQuoteSource"
                        :key="currentQuoteIndex + '-source'">
                     </p>
                 </div>
-                <nav class="flex items-center gap-3">
-                    <!-- AI 状态指示器 -->
-                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border"
+                <nav class="flex items-center gap-2 md:gap-3">
+                    <!-- AI 状态指示器 - 移动端简化显示 -->
+                    <div class="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-lg border"
                          :class="aiAvailable ? 'border-success/20 bg-success/5' : 'border-warning/20 bg-warning/5'">
                         <div class="w-1.5 h-1.5 rounded-full"
                              :class="[
                                  aiAvailable ? 'bg-success' : 'bg-warning',
                                  webSearching && aiAvailable ? 'breathing-light' : ''
                              ]"></div>
-                        <span class="text-xs font-medium" x-text="aiAvailable ? 'AI 已启用' : 'AI 未启用'"></span>
+                        <span class="text-xs font-medium hidden sm:inline" x-text="aiAvailable ? 'AI 已启用' : 'AI 未启用'"></span>
                     </div>
                     <button @click="switchView('sessions')"
                             :class="currentView === 'sessions' ? 'bg-[#357BE2] text-white' : 'text-primary hover:bg-surface-secondary'"
-                            class="px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium">
-                        会话管理
+                            class="px-3 md:px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium">
+                        <span class="hidden sm:inline">会话管理</span>
+                        <span class="sm:hidden">会话</span>
                     </button>
                     <button @click="switchView('reports')"
                             :class="currentView === 'reports' ? 'bg-[#357BE2] text-white' : 'text-primary hover:bg-surface-secondary'"
-                            class="px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium">
-                        调研报告
+                            class="px-3 md:px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer text-sm font-medium">
+                        <span class="hidden sm:inline">调研报告</span>
+                        <span class="sm:hidden">报告</span>
                     </button>
                 </nav>
             </div>
@@ -376,11 +398,11 @@
                                 </div>
                             </template>
                         </div>
-                        <button @click="exitInterview()" class="text-muted hover:text-danger text-sm flex items-center gap-1 cursor-pointer">
+                        <button @click="exitInterview()" class="text-muted hover:text-danger text-sm flex items-center gap-1 cursor-pointer p-2 min-h-[44px] min-w-[44px] justify-center">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                             </svg>
-                            退出
+                            <span class="hidden sm:inline">退出</span>
                         </button>
                     </div>
                 </div>
@@ -392,14 +414,14 @@
 
             <!-- ========== 会话管理视图 ========== -->
             <template x-if="currentView === 'sessions'">
-                <div class="space-y-6">
-                    <div class="flex items-center justify-between">
+                <div class="space-y-4 md:space-y-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
-                            <h2 class="text-2xl font-semibold text-primary">调研会话</h2>
+                            <h2 class="text-xl md:text-2xl font-semibold text-primary">调研会话</h2>
                             <p class="text-muted text-sm mt-1">管理您的需求调研会话</p>
                         </div>
                         <button @click="showNewSessionModal = true"
-                                class="btn-sage-blue text-white px-5 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer flex items-center gap-2">
+                                class="btn-sage-blue text-white px-5 py-2.5 rounded-lg font-medium transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2 w-full sm:w-auto">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
@@ -422,12 +444,12 @@
                     <template x-if="!loading">
                         <div class="grid gap-4">
                             <template x-for="session in sessions" :key="session.session_id">
-                                <div class="bg-surface border border-border rounded-xl hover:shadow-sm transition-all duration-200 p-6 cursor-pointer hover:shadow-sm/20"
+                                <div class="bg-surface border border-border rounded-xl hover:shadow-sm transition-all duration-200 p-4 md:p-6 cursor-pointer hover:shadow-sm/20"
                                      @click="openSession(session.session_id)">
-                                    <div class="flex items-start justify-between gap-4">
+                                    <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center gap-3 mb-2 flex-wrap">
-                                                <h3 class="text-lg font-semibold text-primary truncate" x-text="session.topic"></h3>
+                                                <h3 class="text-base md:text-lg font-semibold text-primary truncate" x-text="session.topic"></h3>
                                                 <span :class="getStatusBadgeClass(session.status)"
                                                       class="px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
                                                       x-text="getStatusText(session.status)"></span>
@@ -452,16 +474,14 @@
                                                 </template>
                                             </div>
                                         </div>
-                                        <div class="flex items-center gap-2 shrink-0" style="width: 120px;">
+                                        <div class="flex items-center gap-2 shrink-0">
                                             <button @click.stop="continueSession(session.session_id)"
                                                     x-show="session.status !== 'completed'"
-                                                    class="px-3 py-1.5 bg-cta/10 text-primary rounded-lg text-sm font-medium hover:bg-cta/20 transition-colors cursor-pointer">
+                                                    class="px-3 py-1.5 bg-cta/10 text-primary rounded-lg text-sm font-medium hover:bg-cta/20 transition-colors cursor-pointer whitespace-nowrap">
                                                 继续
                                             </button>
-                                            <!-- 占位元素，保持按钮区域固定宽度 -->
-                                            <div x-show="session.status === 'completed'" class="w-[52px]"></div>
                                             <button @click.stop="confirmDeleteSession(session.session_id)"
-                                                    class="p-2 text-gray-400 hover:text-danger hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                                    class="p-2 text-gray-400 hover:text-danger hover:bg-red-50 rounded-lg transition-colors cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center"
                                                     aria-label="删除会话">
                                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -495,9 +515,9 @@
 
             <!-- ========== 调研访谈视图 ========== -->
             <template x-if="currentView === 'interview' && currentSession">
-                <div class="grid lg:grid-cols-12 gap-6">
-                    <!-- 左侧：进度面板 -->
-                    <div class="lg:col-span-4 xl:col-span-3 space-y-4 pt-7">
+                <div class="grid lg:grid-cols-12 gap-4 lg:gap-6">
+                    <!-- 左侧：进度面板 - 移动端显示为横向滚动卡片 -->
+                    <div class="lg:col-span-4 xl:col-span-3 space-y-4 lg:pt-7 order-2 lg:order-1">
                         <!-- 调研进度 -->
                         <div class="bg-surface border border-border rounded-xl p-5 sticky top-4">
                             <h3 class="font-semibold text-primary mb-4 flex items-center gap-2">
@@ -659,8 +679,8 @@
                         </template>
                     </div>
 
-                    <!-- 右侧：访谈区域 -->
-                    <div class="lg:col-span-8 xl:col-span-9 space-y-6">
+                    <!-- 右侧：访谈区域 - 移动端显示在上方 -->
+                    <div class="lg:col-span-8 xl:col-span-9 space-y-4 lg:space-y-6 order-1 lg:order-2">
                         <!-- 调研主题展示（在访谈前和访谈过程中显示） -->
                         <template x-if="currentSession && currentStep < 2">
                             <div class="text-base text-gray-700">
@@ -679,8 +699,8 @@
                                 </h4>
                                 <p class="text-muted mb-6">您可以上传参考文档帮助我们更好地理解您的需求背景（可选）</p>
 
-                                <div class="grid gap-4 md:grid-cols-2">
-                                    <label class="flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-200 rounded-xl hover:border-cta cursor-pointer transition-colors group">
+                                <div class="grid gap-4 sm:grid-cols-2">
+                                    <label class="flex flex-col items-center justify-center p-6 md:p-8 border-2 border-dashed border-gray-200 rounded-xl hover:border-cta cursor-pointer transition-colors group">
                                         <svg class="w-12 h-12 text-gray-300 group-hover:text-primary mb-3 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
                                         </svg>
@@ -740,8 +760,8 @@
                                     </h4>
                                     <p class="text-muted mb-4">如果您已有相关的调研报告或分析文档，可以上传供 AI 参考（可选）</p>
 
-                                    <div class="grid gap-4 md:grid-cols-2">
-                                        <label class="flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-200 rounded-xl hover:border-cta cursor-pointer transition-colors group">
+                                    <div class="grid gap-4 sm:grid-cols-2">
+                                        <label class="flex flex-col items-center justify-center p-6 md:p-8 border-2 border-dashed border-gray-200 rounded-xl hover:border-cta cursor-pointer transition-colors group">
                                             <svg class="w-12 h-12 text-gray-300 group-hover:text-primary mb-3 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
                                             </svg>
@@ -941,21 +961,21 @@
                                         </div>
                                     </div>
 
-                                    <div class="flex justify-between items-center mt-6 pt-4 border-t border-gray-100">
+                                    <div class="flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3 mt-6 pt-4 border-t border-gray-100">
                                         <button x-show="canGoPrevQuestion()"
                                                 @click="goPrevQuestion()"
-                                                class="text-muted hover:text-secondary flex items-center gap-1 cursor-pointer">
+                                                class="text-muted hover:text-secondary flex items-center justify-center gap-1 cursor-pointer py-2.5 sm:py-0">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                                             </svg>
                                             上一题
                                         </button>
-                                        <div x-show="!canGoPrevQuestion()"></div>
+                                        <div x-show="!canGoPrevQuestion()" class="hidden sm:block"></div>
                                         <button x-show="currentQuestion.options && currentQuestion.options.length > 0"
                                                 @click="submitAnswer()"
                                                 :disabled="!canSubmitAnswer()"
                                                 :class="canSubmitAnswer() ? 'btn-sage-blue cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
-                                                class="text-white px-8 py-2.5 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+                                                class="text-white px-8 py-2.5 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 w-full sm:w-auto">
                                             下一题
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -1026,9 +1046,9 @@
                                     </template>
                                 </div>
 
-                                <div class="flex justify-between items-center mt-8 pt-4 border-t border-gray-100">
+                                <div class="flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-3 mt-8 pt-4 border-t border-gray-100">
                                     <button @click="currentStep = 1"
-                                            class="text-muted hover:text-secondary flex items-center gap-1 cursor-pointer">
+                                            class="text-muted hover:text-secondary flex items-center justify-center gap-1 cursor-pointer py-2.5 sm:py-0">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                                         </svg>
@@ -1037,7 +1057,7 @@
                                     <button @click="confirmRestartResearch()"
                                             :disabled="generatingReport"
                                             :class="generatingReport ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'btn-sage-blue text-white cursor-pointer'"
-                                            class="px-8 py-2.5 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+                                            class="px-8 py-2.5 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 w-full sm:w-auto">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                         </svg>
@@ -1052,10 +1072,10 @@
 
             <!-- ========== 报告视图 ========== -->
             <template x-if="currentView === 'reports'">
-                <div class="space-y-6">
-                    <div class="flex items-center justify-between">
+                <div class="space-y-4 md:space-y-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
-                            <h2 class="text-2xl font-semibold text-primary">调研报告</h2>
+                            <h2 class="text-xl md:text-2xl font-semibold text-primary">调研报告</h2>
                             <p class="text-muted text-sm mt-1">查看和管理已生成的调研报告</p>
                         </div>
                     </div>
@@ -1113,21 +1133,21 @@
                     <!-- 报告详情 -->
                     <template x-if="selectedReport">
                         <div class="space-y-4">
-                            <div class="flex items-center justify-between">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <button @click="selectedReport = null" class="text-primary hover:text-primary-hover flex items-center gap-1 cursor-pointer">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                                     </svg>
                                     返回列表
                                 </button>
-                                <button @click="downloadReport()" class="btn-sage-blue text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer flex items-center gap-2">
+                                <button @click="downloadReport()" class="btn-sage-blue text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer flex items-center justify-center gap-2 w-full sm:w-auto">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                     </svg>
                                     下载报告
                                 </button>
                             </div>
-                            <div class="bg-surface border border-border rounded-xl p-8">
+                            <div class="bg-surface border border-border rounded-xl p-4 md:p-8">
                                 <div class="markdown-body"
                                      x-html="renderMarkdown(reportContent)"
                                      x-effect="reportContent && setTimeout(() => onReportRendered(), 150)">
@@ -1147,10 +1167,10 @@
              x-transition:leave="transition ease-in duration-150"
              x-transition:leave-start="opacity-100"
              x-transition:leave-end="opacity-0"
-             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4"
              @click.self="showNewSessionModal = false"
              @keydown.escape.window="showNewSessionModal = false">
-            <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-y-auto"
                  x-transition:enter="transition ease-out duration-200"
                  x-transition:enter-start="opacity-0 scale-95"
                  x-transition:enter-end="opacity-100 scale-100">
@@ -1343,8 +1363,9 @@
 
         <!-- Footer -->
         <footer class="bg-white border-t border-gray-200 py-4 mt-auto">
-            <div class="max-w-7xl mx-auto px-4 text-center text-sm text-muted">
-                Deep Vision 深瞳 - 智能需求调研助手 | 基于选择式交互深度挖掘真实需求
+            <div class="max-w-7xl mx-auto px-4 text-center text-xs sm:text-sm text-muted">
+                <span class="hidden sm:inline">Deep Vision 深瞳  |  © 2026 Designed by AI与创新研究院</span>
+                <span class="sm:hidden">Deep Vision 深瞳</span>
             </div>
         </footer>
     </div>
