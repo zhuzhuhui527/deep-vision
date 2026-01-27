@@ -11,7 +11,7 @@ const SITE_CONFIG = {
         enabled: true,
 
         // 轮播间隔时间（毫秒）
-        interval: 5000,  // 3秒
+        interval: 5000,  // 5秒
 
         // 诗句列表
         items: [

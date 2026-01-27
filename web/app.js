@@ -30,9 +30,18 @@ function deepVision() {
         sessions: [],
         currentSession: null,
         newSessionTopic: '',
+        newSessionDescription: '',
         showNewSessionModal: false,
         showDeleteModal: false,
         sessionToDelete: null,
+
+        // 确认重新调研对话框
+        showRestartModal: false,
+
+        // 确认删除文档对话框
+        showDeleteDocModal: false,
+        docToDelete: null,
+        docDeleteCallback: null,
 
         // 报告相关
         reports: [],
@@ -205,13 +214,17 @@ function deepVision() {
             try {
                 const session = await this.apiCall('/sessions', {
                     method: 'POST',
-                    body: JSON.stringify({ topic: this.newSessionTopic })
+                    body: JSON.stringify({
+                        topic: this.newSessionTopic,
+                        description: this.newSessionDescription.trim() || null
+                    })
                 });
 
                 this.sessions.unshift(session);
                 this.currentSession = session;
                 this.showNewSessionModal = false;
                 this.newSessionTopic = '';
+                this.newSessionDescription = '';
                 this.currentStep = 0;
                 this.currentView = 'interview';
                 this.showToast('会话创建成功', 'success');
@@ -312,27 +325,119 @@ function deepVision() {
         },
 
         async removeDocument(index) {
-            if (!this.currentSession || !this.currentSession.reference_docs) return;
+            console.log('removeDocument 被调用，index:', index);
+
+            if (!this.currentSession || !this.currentSession.reference_docs) {
+                console.log('没有当前会话或参考文档');
+                return;
+            }
 
             const doc = this.currentSession.reference_docs[index];
-            if (!confirm(`确定要删除文档 "${doc.name}" 吗？`)) return;
+            console.log('准备删除文档:', doc.name);
 
-            try {
-                const response = await fetch(
-                    `${API_BASE}/sessions/${this.currentSession.session_id}/documents/${encodeURIComponent(doc.name)}`,
-                    { method: 'DELETE' }
-                );
+            // 使用自定义确认对话框
+            this.docToDelete = doc;
+            this.docDeleteCallback = async () => {
+                try {
+                    const response = await fetch(
+                        `${API_BASE}/sessions/${this.currentSession.session_id}/documents/${encodeURIComponent(doc.name)}`,
+                        { method: 'DELETE' }
+                    );
 
-                if (response.ok) {
-                    // 刷新会话数据
-                    this.currentSession = await this.apiCall(`/sessions/${this.currentSession.session_id}`);
-                    this.showToast(`文档 ${doc.name} 已删除`, 'success');
-                } else {
-                    throw new Error('删除失败');
+                    if (response.ok) {
+                        // 刷新会话数据
+                        this.currentSession = await this.apiCall(`/sessions/${this.currentSession.session_id}`);
+                        this.showToast(`文档 ${doc.name} 已删除`, 'success');
+                    } else {
+                        throw new Error('删除失败');
+                    }
+                } catch (error) {
+                    console.error('删除文档错误:', error);
+                    this.showToast(`删除文档失败`, 'error');
                 }
-            } catch (error) {
-                this.showToast(`删除文档失败`, 'error');
+            };
+            this.showDeleteDocModal = true;
+        },
+
+        // ============ 已有调研成果上传 ============
+        async uploadResearchDoc(event) {
+            const files = event.target.files;
+            if (!files.length || !this.currentSession) return;
+
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(
+                        `${API_BASE}/sessions/${this.currentSession.session_id}/research-docs`,
+                        { method: 'POST', body: formData }
+                    );
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        // 刷新会话数据
+                        this.currentSession = await this.apiCall(`/sessions/${this.currentSession.session_id}`);
+                        this.showToast(`调研成果 ${file.name} 上传成功`, 'success');
+                    } else {
+                        throw new Error('上传失败');
+                    }
+                } catch (error) {
+                    this.showToast(`上传 ${file.name} 失败`, 'error');
+                }
             }
+
+            event.target.value = '';
+        },
+
+        async removeResearchDoc(index) {
+            console.log('removeResearchDoc 被调用，index:', index);
+
+            if (!this.currentSession || !this.currentSession.research_docs) {
+                console.log('没有当前会话或调研成果文档');
+                return;
+            }
+
+            const doc = this.currentSession.research_docs[index];
+            console.log('准备删除调研成果:', doc.name);
+
+            // 使用自定义确认对话框
+            this.docToDelete = doc;
+            this.docDeleteCallback = async () => {
+                try {
+                    const response = await fetch(
+                        `${API_BASE}/sessions/${this.currentSession.session_id}/research-docs/${encodeURIComponent(doc.name)}`,
+                        { method: 'DELETE' }
+                    );
+
+                    if (response.ok) {
+                        // 刷新会话数据
+                        this.currentSession = await this.apiCall(`/sessions/${this.currentSession.session_id}`);
+                        this.showToast(`调研成果 ${doc.name} 已删除`, 'success');
+                    } else {
+                        throw new Error('删除失败');
+                    }
+                } catch (error) {
+                    console.error('删除调研成果错误:', error);
+                    this.showToast(`删除调研成果失败`, 'error');
+                }
+            };
+            this.showDeleteDocModal = true;
+        },
+
+        async confirmDeleteDoc() {
+            if (this.docDeleteCallback) {
+                await this.docDeleteCallback();
+            }
+            this.showDeleteDocModal = false;
+            this.docToDelete = null;
+            this.docDeleteCallback = null;
+        },
+
+        cancelDeleteDoc() {
+            this.showDeleteDocModal = false;
+            this.docToDelete = null;
+            this.docDeleteCallback = null;
         },
 
         // ============ AI 驱动的访谈流程 ============
@@ -420,12 +525,13 @@ function deepVision() {
                 }
             } catch (error) {
                 console.error('获取问题失败:', error);
+                console.error('错误详情:', error.message, error.stack);
 
                 // 网络错误或其他异常
                 const errorTitle = '网络错误';
-                const errorDetail = '无法连接到服务器，请检查网络连接后重试';
+                const errorDetail = `无法连接到服务器: ${error.message}`;
 
-                this.showToast(errorTitle, 'error');
+                this.showToast(`${errorTitle}: ${error.message}`, 'error');
                 this.currentQuestion = {
                     text: '',
                     options: [],
@@ -543,7 +649,8 @@ function deepVision() {
                 await this.fetchNextQuestion();
 
             } catch (error) {
-                this.showToast('提交回答失败', 'error');
+                console.error('提交回答错误:', error);
+                this.showToast(`提交回答失败: ${error.message}`, 'error');
             }
         },
 
@@ -613,6 +720,41 @@ function deepVision() {
 
         goToConfirmation() {
             this.currentStep = 2;
+        },
+
+        // ============ 重新调研 ============
+        confirmRestartResearch() {
+            this.showRestartModal = true;
+        },
+
+        async restartResearch() {
+            if (!this.currentSession) return;
+            this.showRestartModal = false;
+
+            try {
+                const result = await this.apiCall(
+                    `/sessions/${this.currentSession.session_id}/restart-research`,
+                    { method: 'POST' }
+                );
+
+                if (result.success) {
+                    // 刷新会话数据
+                    this.currentSession = await this.apiCall(`/sessions/${this.currentSession.session_id}`);
+
+                    // 重置前端状态
+                    this.currentStep = 0;
+                    this.currentDimension = 'customer_needs';
+                    this.currentQuestion = null;
+                    this.currentOptions = [];
+
+                    this.showToast('已保存当前调研成果，开始新一轮调研', 'success');
+                } else {
+                    this.showToast('重新调研失败', 'error');
+                }
+            } catch (error) {
+                console.error('重新调研错误:', error);
+                this.showToast('重新调研失败', 'error');
+            }
         },
 
         // ============ 报告生成（AI 驱动）============
@@ -765,7 +907,7 @@ function deepVision() {
                         // 预处理：修复常见的语法问题
                         let fixedDefinition = graphDefinition;
 
-                        // 修复1：检测 quadrantChart 的中文，自动转换为英文
+                        // 修复1：检测 quadrantChart 的中文（quadrantChart 对中文支持不好，需要转换）
                         if (fixedDefinition.includes('quadrantChart')) {
                             console.log(`  ⚠️  图表 ${i + 1} 是 quadrantChart，检查并修复中文...`);
 
@@ -807,13 +949,15 @@ function deepVision() {
                                 fixedDefinition += '\n    Sample: [0.5, 0.5]';
                             }
 
-                            console.log(`  ✏️  已将中文标签转换为英文`);
-                            console.log('  📋 修复后的代码:\n' + fixedDefinition);
+                            console.log(`  ✏️  quadrantChart 已将中文标签转换为英文（quadrantChart 限制）`);
                         }
 
-                        // 修复2：检测 flowchart/graph 中的中文 subgraph ID
+                        // 修复2：检测 flowchart/graph 中的语法问题（保留中文显示）
                         if (fixedDefinition.match(/^(graph|flowchart)\s/m)) {
-                            console.log(`  ⚠️  图表 ${i + 1} 是 flowchart/graph，检查并修复中文 subgraph...`);
+                            console.log(`  ⚠️  图表 ${i + 1} 是 flowchart/graph，检查语法...`);
+
+                            // 修复 HTML 标签（如 <br>）为换行符
+                            fixedDefinition = fixedDefinition.replace(/<br\s*\/?>/gi, ' ');
 
                             // 检查是否有未闭合的 subgraph（缺少 end）
                             const subgraphCount = (fixedDefinition.match(/subgraph\s/g) || []).length;
@@ -825,29 +969,33 @@ function deepVision() {
                                 }
                             }
 
-                            // 替换中文 subgraph ID 为英文
-                            let subgraphIndex = 1;
+                            // 修复节点标签中的特殊字符（可能导致解析失败）
+                            // 1. 替换节点标签中的半角冒号为短横线（但保留 subgraph 标识中的冒号）
                             fixedDefinition = fixedDefinition.replace(
-                                /subgraph\s+([\u4e00-\u9fa5][^\["\n]*)\[/g,
-                                (match, chineseId) => {
-                                    const englishId = `SG${subgraphIndex++}`;
-                                    console.log(`    📝 将 subgraph "${chineseId.trim()}" ID 替换为 "${englishId}"`);
-                                    return `subgraph ${englishId}[`;
-                                }
+                                /(\w+)\[([^\]]*):([^\]]*)\]/g,
+                                (match, id, before, after) => `${id}[${before}-${after}]`
                             );
 
-                            // 替换中文节点 ID 为英文（如 采购部 --> 数据中心）
-                            let nodeIndex = 1;
+                            // 2. 替换节点标签中的半角引号
                             fixedDefinition = fixedDefinition.replace(
-                                /^\s*([\u4e00-\u9fa5]+)\[/gm,
-                                (match, chineseId) => {
-                                    const englishId = `N${nodeIndex++}`;
-                                    console.log(`    📝 将节点 "${chineseId}" ID 替换为 "${englishId}"`);
-                                    return `    ${englishId}[`;
-                                }
+                                /(\w+)\[([^\]]*)"([^\]]*)\]/g,
+                                (match, id, before, after) => `${id}[${before}${after}]`
                             );
 
-                            console.log(`  ✏️  已修复 flowchart 中文 subgraph/节点 ID`);
+                            // 3. 修复连接线上标签中的特殊字符
+                            fixedDefinition = fixedDefinition.replace(
+                                /-->\|([^|]*):([^|]*)\|/g,
+                                (match, before, after) => `-->|${before}-${after}|`
+                            );
+
+                            // 4. 修复连接定义中使用 --- 的情况（改为 --）
+                            // 处理 P1 --- P1D["..."] 格式，改为 P1 --> P1D["..."]
+                            fixedDefinition = fixedDefinition.replace(
+                                /(\w+)\s+---\s+(\w+)\[/g,
+                                (match, from, to) => `${from} --> ${to}[`
+                            );
+
+                            console.log(`  ✅ flowchart/graph 语法检查完成，保留中文显示`);
                         }
 
                         // 使用 mermaid.render() 生成 SVG

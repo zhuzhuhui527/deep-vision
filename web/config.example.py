@@ -21,7 +21,7 @@ MODEL_NAME = "claude-sonnet-4-20250514"  # 可选: claude-3-opus, claude-3-sonne
 
 # Token 限制配置
 MAX_TOKENS_DEFAULT = 2000      # 默认最大 token 数
-MAX_TOKENS_QUESTION = 500      # 生成问题时的最大 token 数
+MAX_TOKENS_QUESTION = 800      # 生成问题时的最大 token 数
 MAX_TOKENS_REPORT = 4000       # 生成报告时的最大 token 数
 
 # ============ 服务器配置 ============

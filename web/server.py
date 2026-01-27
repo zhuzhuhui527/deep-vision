@@ -50,11 +50,12 @@ except ImportError:
     print("⚠️  未找到 config.py，使用默认配置")
     print("   请复制 config.example.py 为 config.py 并填入实际配置")
     # 默认配置（从环境变量获取）
-    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-    ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-    MODEL_NAME = "claude-sonnet-4-20250514"
+    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+    ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "")
+    ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY", "")
+    MODEL_NAME = os.environ.get("MODEL_NAME", "")
     MAX_TOKENS_DEFAULT = 2000
-    MAX_TOKENS_QUESTION = 500
+    MAX_TOKENS_QUESTION = 800
     MAX_TOKENS_REPORT = 4000
     SERVER_HOST = "0.0.0.0"
     SERVER_PORT = 5001
@@ -84,18 +85,224 @@ SESSIONS_DIR = DATA_DIR / "sessions"
 REPORTS_DIR = DATA_DIR / "reports"
 CONVERTED_DIR = DATA_DIR / "converted"
 TEMP_DIR = DATA_DIR / "temp"
+METRICS_DIR = DATA_DIR / "metrics"
+SUMMARIES_DIR = DATA_DIR / "summaries"  # 文档摘要缓存目录
 DELETED_REPORTS_FILE = REPORTS_DIR / ".deleted_reports.json"
 
-for d in [SESSIONS_DIR, REPORTS_DIR, CONVERTED_DIR, TEMP_DIR]:
+for d in [SESSIONS_DIR, REPORTS_DIR, CONVERTED_DIR, TEMP_DIR, METRICS_DIR, SUMMARIES_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # Web Search 状态追踪（用于前端呼吸灯效果）
 web_search_active = False
 
+
+# ============ 性能监控系统 ============
+
+class MetricsCollector:
+    """API 性能指标收集器"""
+
+    def __init__(self, metrics_file: Path):
+        self.metrics_file = metrics_file
+        self._ensure_metrics_file()
+
+    def _ensure_metrics_file(self):
+        """确保指标文件存在"""
+        if not self.metrics_file.exists():
+            self.metrics_file.write_text(json.dumps({
+                "calls": [],
+                "summary": {
+                    "total_calls": 0,
+                    "total_timeouts": 0,
+                    "total_truncations": 0,
+                    "avg_response_time": 0,
+                    "avg_prompt_length": 0
+                }
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def record_api_call(self, call_type: str, prompt_length: int, response_time: float,
+                       success: bool, timeout: bool = False, error_msg: str = None,
+                       truncated_docs: list = None, max_tokens: int = None):
+        """记录 API 调用指标"""
+        try:
+            # 读取现有数据
+            data = json.loads(self.metrics_file.read_text(encoding="utf-8"))
+
+            # 添加新记录
+            call_record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "type": call_type,  # "question" or "report"
+                "prompt_length": prompt_length,
+                "response_time_ms": round(response_time * 1000, 2),
+                "max_tokens": max_tokens,
+                "success": success,
+                "timeout": timeout,
+                "error": error_msg,
+                "truncated_docs": truncated_docs or []
+            }
+
+            data["calls"].append(call_record)
+
+            # 更新汇总统计
+            summary = data["summary"]
+            summary["total_calls"] = summary.get("total_calls", 0) + 1
+            if timeout:
+                summary["total_timeouts"] = summary.get("total_timeouts", 0) + 1
+            if truncated_docs:
+                summary["total_truncations"] = summary.get("total_truncations", 0) + len(truncated_docs)
+
+            # 计算平均值
+            all_calls = data["calls"]
+            if all_calls:
+                summary["avg_response_time"] = round(
+                    sum(c["response_time_ms"] for c in all_calls) / len(all_calls), 2
+                )
+                summary["avg_prompt_length"] = round(
+                    sum(c["prompt_length"] for c in all_calls) / len(all_calls), 2
+                )
+
+            # 保存（只保留最近 1000 条记录）
+            if len(data["calls"]) > 1000:
+                data["calls"] = data["calls"][-1000:]
+
+            self.metrics_file.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+
+        except Exception as e:
+            print(f"⚠️  记录指标失败: {e}")
+
+    def get_statistics(self, last_n: int = None) -> dict:
+        """获取统计信息"""
+        try:
+            data = json.loads(self.metrics_file.read_text(encoding="utf-8"))
+            calls = data["calls"]
+
+            if last_n:
+                calls = calls[-last_n:]
+
+            if not calls:
+                return {
+                    "total_calls": 0,
+                    "message": "暂无数据"
+                }
+
+            # 计算统计信息
+            total_calls = len(calls)
+            successful_calls = sum(1 for c in calls if c["success"])
+            timeout_calls = sum(1 for c in calls if c.get("timeout", False))
+            truncation_events = sum(len(c.get("truncated_docs", [])) for c in calls)
+
+            response_times = [c["response_time_ms"] for c in calls if c["success"]]
+            prompt_lengths = [c["prompt_length"] for c in calls]
+
+            stats = {
+                "period": f"最近 {last_n} 次调用" if last_n else "全部调用",
+                "total_calls": total_calls,
+                "successful_calls": successful_calls,
+                "failed_calls": total_calls - successful_calls,
+                "timeout_calls": timeout_calls,
+                "timeout_rate": round(timeout_calls / total_calls * 100, 2) if total_calls > 0 else 0,
+                "truncation_events": truncation_events,
+                "truncation_rate": round(truncation_events / total_calls * 100, 2) if total_calls > 0 else 0,
+                "avg_response_time_ms": round(sum(response_times) / len(response_times), 2) if response_times else 0,
+                "max_response_time_ms": round(max(response_times), 2) if response_times else 0,
+                "min_response_time_ms": round(min(response_times), 2) if response_times else 0,
+                "avg_prompt_length": round(sum(prompt_lengths) / len(prompt_lengths), 2) if prompt_lengths else 0,
+                "max_prompt_length": max(prompt_lengths) if prompt_lengths else 0,
+            }
+
+            # 生成优化建议
+            stats["recommendations"] = self._generate_recommendations(stats)
+
+            return stats
+
+        except Exception as e:
+            return {"error": f"获取统计信息失败: {e}"}
+
+    def _generate_recommendations(self, stats: dict) -> list:
+        """基于统计数据生成优化建议"""
+        recommendations = []
+
+        # 超时率过高
+        if stats["timeout_rate"] > 10:
+            recommendations.append({
+                "level": "critical",
+                "message": f"超时率过高 ({stats['timeout_rate']}%)，建议减少文档长度限制或实施智能摘要"
+            })
+        elif stats["timeout_rate"] > 5:
+            recommendations.append({
+                "level": "warning",
+                "message": f"超时率偏高 ({stats['timeout_rate']}%)，需要关注"
+            })
+
+        # 截断率过高
+        if stats["truncation_rate"] > 50:
+            recommendations.append({
+                "level": "warning",
+                "message": f"文档截断频繁 ({stats['truncation_rate']}%)，建议实施智能摘要功能"
+            })
+
+        # Prompt 过长
+        if stats["avg_prompt_length"] > 8000:
+            recommendations.append({
+                "level": "warning",
+                "message": f"平均 Prompt 长度较大 ({stats['avg_prompt_length']} 字符)，可能影响响应速度"
+            })
+
+        # 响应时间过长
+        if stats["avg_response_time_ms"] > 60000:
+            recommendations.append({
+                "level": "warning",
+                "message": f"平均响应时间较长 ({stats['avg_response_time_ms']/1000:.1f} 秒)，建议优化 Prompt 长度"
+            })
+
+        # 一切正常
+        if not recommendations:
+            if stats["timeout_rate"] < 5 and stats["truncation_rate"] < 30:
+                recommendations.append({
+                    "level": "info",
+                    "message": "系统运行正常，可考虑适度增加文档长度限制以提升质量"
+                })
+
+        return recommendations
+
+
+# 初始化指标收集器
+metrics_collector = MetricsCollector(METRICS_DIR / "api_metrics.json")
+
 # Claude 客户端初始化
 claude_client = None
 
-if ENABLE_AI and HAS_ANTHROPIC and ANTHROPIC_API_KEY:
+# 检查 API Key 是否有效
+def is_valid_api_key(api_key: str) -> bool:
+    """检查 API Key 是否有效（不是默认占位符）"""
+    if not api_key:
+        return False
+    placeholder_patterns = [
+        "your-", "your_", "example", "test", "placeholder",
+        "api-key", "apikey", "YOUR-", "YOUR_"
+    ]
+    api_key_lower = api_key.lower()
+    for pattern in placeholder_patterns:
+        if pattern in api_key_lower:
+            return False
+    return True
+
+# 检查配置
+api_key_valid = is_valid_api_key(ANTHROPIC_API_KEY)
+base_url_valid = ANTHROPIC_BASE_URL and ANTHROPIC_BASE_URL != "https://api.anthropic.com" or api_key_valid
+
+if not api_key_valid:
+    print("⚠️  ANTHROPIC_API_KEY 未配置或使用默认值")
+    print("   请在 config.py 中填入有效的 API Key")
+    ENABLE_AI = False
+
+if not base_url_valid and not ANTHROPIC_BASE_URL:
+    print("⚠️  ANTHROPIC_BASE_URL 未配置")
+    print("   请在 config.py 中填入有效的 Base URL")
+
+if ENABLE_AI and HAS_ANTHROPIC and api_key_valid:
     try:
         claude_client = anthropic.Anthropic(
             api_key=ANTHROPIC_API_KEY,
@@ -104,6 +311,22 @@ if ENABLE_AI and HAS_ANTHROPIC and ANTHROPIC_API_KEY:
         print(f"✅ Claude 客户端已初始化")
         print(f"   模型: {MODEL_NAME}")
         print(f"   Base URL: {ANTHROPIC_BASE_URL}")
+
+        # 测试 API 连接
+        try:
+            test_response = claude_client.messages.create(
+                model=MODEL_NAME,
+                max_tokens=5,
+                messages=[{"role": "user", "content": "Hi"}]
+            )
+            print(f"✅ API 连接测试成功")
+        except Exception as e:
+            print(f"⚠️  API 连接测试失败: {e}")
+            print("   请检查 API Key 和 Base URL 是否正确")
+            claude_client = None
+    except Exception as e:
+        print(f"❌ Claude 客户端初始化失败: {e}")
+        claude_client = None
     except Exception as e:
         print(f"❌ Claude 客户端初始化失败: {e}")
 else:
@@ -450,84 +673,747 @@ DIMENSION_INFO = {
 }
 
 
-def build_interview_prompt(session: dict, dimension: str, all_dim_logs: list) -> str:
-    """构建访谈 prompt"""
+# ============ 滑动窗口上下文管理 ============
+
+# 配置参数
+CONTEXT_WINDOW_SIZE = 5  # 保留最近N条完整问答
+SUMMARY_THRESHOLD = 8    # 超过此数量时触发摘要生成
+MAX_DOC_LENGTH = 2000    # 单个文档最大长度（约650汉字，增加33%）
+MAX_TOTAL_DOCS = 5000    # 所有文档总长度限制（约1600汉字，增加67%）
+API_TIMEOUT = 90.0       # API 调用超时时间（秒），从60秒增加到90秒
+
+# ============ 智能文档摘要配置（第三阶段优化） ============
+ENABLE_SMART_SUMMARY = True       # 启用智能文档摘要（替代简单截断）
+SMART_SUMMARY_THRESHOLD = 1500    # 触发智能摘要的文档长度阈值（字符）
+SMART_SUMMARY_TARGET = 800        # 摘要目标长度（字符）
+SUMMARY_CACHE_ENABLED = True      # 启用摘要缓存（避免重复生成）
+MAX_TOKENS_SUMMARY = 500          # 摘要生成的最大token数
+
+
+# ============ 智能文档摘要实现 ============
+
+def get_document_hash(content: str) -> str:
+    """计算文档内容的hash值，用于摘要缓存"""
+    import hashlib
+    return hashlib.md5(content.encode('utf-8')).hexdigest()[:16]
+
+
+def get_cached_summary(doc_hash: str) -> Optional[str]:
+    """获取缓存的文档摘要"""
+    if not SUMMARY_CACHE_ENABLED:
+        return None
+
+    cache_file = SUMMARIES_DIR / f"{doc_hash}.txt"
+    if cache_file.exists():
+        try:
+            summary = cache_file.read_text(encoding='utf-8')
+            if ENABLE_DEBUG_LOG:
+                print(f"📋 使用缓存的文档摘要: {doc_hash}")
+            return summary
+        except Exception as e:
+            if ENABLE_DEBUG_LOG:
+                print(f"⚠️  读取摘要缓存失败: {e}")
+    return None
+
+
+def save_summary_cache(doc_hash: str, summary: str) -> None:
+    """保存文档摘要到缓存"""
+    if not SUMMARY_CACHE_ENABLED:
+        return
+
+    cache_file = SUMMARIES_DIR / f"{doc_hash}.txt"
+    try:
+        cache_file.write_text(summary, encoding='utf-8')
+        if ENABLE_DEBUG_LOG:
+            print(f"💾 摘要已缓存: {doc_hash}")
+    except Exception as e:
+        if ENABLE_DEBUG_LOG:
+            print(f"⚠️  保存摘要缓存失败: {e}")
+
+
+def summarize_document(content: str, doc_name: str = "文档", topic: str = "") -> tuple[str, bool]:
+    """
+    智能文档摘要生成（第三阶段优化核心功能）
+
+    当文档过长时，使用AI生成保留关键信息的摘要，而非简单截断。
+
+    Args:
+        content: 文档原始内容
+        doc_name: 文档名称（用于提示）
+        topic: 调研主题（用于生成更相关的摘要）
+
+    Returns:
+        tuple[str, bool]: (处理后的内容, 是否生成了摘要)
+    """
+    original_length = len(content)
+
+    # 如果文档长度未超过阈值，直接返回原文
+    if original_length <= SMART_SUMMARY_THRESHOLD:
+        return content, False
+
+    # 如果未启用智能摘要或没有AI客户端，使用简单截断
+    if not ENABLE_SMART_SUMMARY or not claude_client:
+        truncated = content[:MAX_DOC_LENGTH]
+        if ENABLE_DEBUG_LOG:
+            print(f"📄 文档 {doc_name} 使用简单截断: {original_length} -> {MAX_DOC_LENGTH} 字符")
+        return truncated, False
+
+    # 检查缓存
+    doc_hash = get_document_hash(content)
+    cached = get_cached_summary(doc_hash)
+    if cached:
+        return cached, True
+
+    # 生成智能摘要
+    if ENABLE_DEBUG_LOG:
+        print(f"🤖 为文档 {doc_name} 生成智能摘要: {original_length} -> ~{SMART_SUMMARY_TARGET} 字符")
+
+    # 构建摘要生成prompt
+    summary_prompt = f"""请为以下文档生成一个精炼的摘要。
+
+## 要求
+1. 摘要长度控制在 {SMART_SUMMARY_TARGET} 字符以内
+2. 保留文档中的关键信息、核心观点和重要数据
+3. 如果文档与"{topic}"主题相关，优先保留与主题相关的内容
+4. 使用简洁清晰的语言，避免冗余
+5. 保持信息的准确性，不要添加文档中没有的内容
+
+## 文档名称
+{doc_name}
+
+## 文档内容
+{content[:8000]}
+
+## 输出格式
+直接输出摘要内容，不要添加"摘要："等前缀。"""
+
+    try:
+        import time
+        start_time = time.time()
+
+        response = claude_client.messages.create(
+            model=MODEL_NAME,
+            max_tokens=MAX_TOKENS_SUMMARY,
+            timeout=60.0,  # 摘要生成用较短超时
+            messages=[{"role": "user", "content": summary_prompt}]
+        )
+
+        response_time = time.time() - start_time
+        summary = response.content[0].text.strip()
+
+        # 记录metrics
+        metrics_collector.record_api_call(
+            call_type="doc_summary",
+            prompt_length=len(summary_prompt),
+            response_time=response_time,
+            success=True,
+            timeout=False,
+            max_tokens=MAX_TOKENS_SUMMARY
+        )
+
+        # 保存到缓存
+        save_summary_cache(doc_hash, summary)
+
+        if ENABLE_DEBUG_LOG:
+            print(f"✅ 摘要生成成功: {original_length} -> {len(summary)} 字符 ({response_time:.1f}s)")
+
+        return summary, True
+
+    except Exception as e:
+        if ENABLE_DEBUG_LOG:
+            print(f"⚠️  摘要生成失败，回退到简单截断: {e}")
+
+        # 记录失败的metrics
+        metrics_collector.record_api_call(
+            call_type="doc_summary",
+            prompt_length=len(summary_prompt) if 'summary_prompt' in locals() else 0,
+            response_time=0,
+            success=False,
+            timeout="timeout" in str(e).lower(),
+            error_msg=str(e),
+            max_tokens=MAX_TOKENS_SUMMARY
+        )
+
+        # 回退到简单截断
+        return content[:MAX_DOC_LENGTH], False
+
+
+def process_document_for_context(doc: dict, remaining_length: int, topic: str = "") -> tuple[str, str, int, bool]:
+    """
+    处理文档以用于上下文（统一的文档处理入口）
+
+    Args:
+        doc: 文档字典，包含 name 和 content
+        remaining_length: 剩余可用长度
+        topic: 调研主题
+
+    Returns:
+        tuple[str, str, int, bool]: (文档名, 处理后的内容, 使用的长度, 是否被摘要/截断)
+    """
+    doc_name = doc.get('name', '文档')
+    content = doc.get('content', '')
+
+    if not content:
+        return doc_name, '', 0, False
+
+    original_length = len(content)
+    max_allowed = min(MAX_DOC_LENGTH, remaining_length)
+
+    # 如果文档很短（不超过摘要阈值），直接使用
+    if original_length <= SMART_SUMMARY_THRESHOLD:
+        # 但如果超过max_allowed，仍需截断
+        if original_length > max_allowed:
+            return doc_name, content[:max_allowed], max_allowed, True
+        return doc_name, content, original_length, False
+
+    # 文档超过摘要阈值，尝试智能摘要
+    if ENABLE_SMART_SUMMARY:
+        processed_content, is_summarized = summarize_document(content, doc_name, topic)
+
+        # 如果摘要后仍然过长，再截断
+        if len(processed_content) > max_allowed:
+            processed_content = processed_content[:max_allowed]
+
+        return doc_name, processed_content, len(processed_content), True
+
+    # 未启用智能摘要，简单截断
+    truncated = content[:max_allowed]
+    return doc_name, truncated, len(truncated), True
+
+
+def generate_history_summary(session: dict, exclude_recent: int = 5) -> Optional[str]:
+    """
+    生成历史访谈记录的摘要
+
+    Args:
+        session: 会话数据
+        exclude_recent: 排除最近N条记录（这些会保留完整内容）
+
+    Returns:
+        摘要文本，如果无需摘要则返回 None
+    """
+    interview_log = session.get("interview_log", [])
+
+    # 如果记录太少，不需要摘要
+    if len(interview_log) <= exclude_recent:
+        return None
+
+    # 获取需要摘要的历史记录
+    history_logs = interview_log[:-exclude_recent] if exclude_recent > 0 else interview_log
+
+    if not history_logs:
+        return None
+
+    # 检查是否有缓存的摘要
+    cached_summary = session.get("context_summary", {})
+    cached_count = cached_summary.get("log_count", 0)
+
+    # 如果缓存的摘要覆盖了相同数量的记录，直接使用缓存
+    if cached_count == len(history_logs) and cached_summary.get("text"):
+        if ENABLE_DEBUG_LOG:
+            print(f"📋 使用缓存的历史摘要（覆盖 {cached_count} 条记录）")
+        return cached_summary["text"]
+
+    # 需要生成新摘要
+    if not claude_client:
+        # 无 AI 时使用简单摘要
+        return _generate_simple_summary(history_logs)
+
+    # 构建摘要生成 prompt
+    summary_prompt = _build_summary_prompt(session.get("topic", ""), history_logs)
+
+    try:
+        if ENABLE_DEBUG_LOG:
+            print(f"🗜️ 正在生成历史摘要（{len(history_logs)} 条记录）...")
+
+        summary_text = call_claude(summary_prompt, max_tokens=300, call_type="summary")
+
+        if summary_text:
+            if ENABLE_DEBUG_LOG:
+                print(f"✅ 历史摘要生成成功，长度: {len(summary_text)} 字符")
+            return summary_text
+    except Exception as e:
+        print(f"⚠️ 生成历史摘要失败: {e}")
+
+    # 失败时回退到简单摘要
+    return _generate_simple_summary(history_logs)
+
+
+def _build_summary_prompt(topic: str, logs: list) -> str:
+    """构建摘要生成的 prompt"""
+    # 按维度整理
+    by_dim = {}
+    for log in logs:
+        dim = log.get("dimension", "other")
+        if dim not in by_dim:
+            by_dim[dim] = []
+        by_dim[dim].append(log)
+
+    logs_text = ""
+    for dim, dim_logs in by_dim.items():
+        dim_name = DIMENSION_INFO.get(dim, {}).get("name", dim)
+        logs_text += f"\n【{dim_name}】\n"
+        for log in dim_logs:
+            logs_text += f"Q: {log['question'][:80]}\nA: {log['answer'][:100]}\n"
+
+    return f"""请将以下访谈记录压缩为简洁的摘要，保留关键信息点。
+
+调研主题：{topic}
+
+访谈记录：
+{logs_text}
+
+要求：
+1. 按维度整理关键信息
+2. 每个维度用1-2句话概括核心要点
+3. 保留具体的数据、指标、选择
+4. 总长度控制在200字以内
+5. 直接输出摘要内容，不要添加其他说明
+
+摘要："""
+
+
+def _generate_simple_summary(logs: list) -> str:
+    """生成简单摘要（无 AI 时使用）"""
+    by_dim = {}
+    for log in logs:
+        dim = log.get("dimension", "other")
+        dim_name = DIMENSION_INFO.get(dim, {}).get("name", dim)
+        if dim_name not in by_dim:
+            by_dim[dim_name] = []
+        # 只保留答案的关键部分
+        answer = log.get("answer", "")[:50]
+        by_dim[dim_name].append(answer)
+
+    parts = []
+    for dim_name, answers in by_dim.items():
+        parts.append(f"【{dim_name}】: {'; '.join(answers[:3])}")
+
+    return " | ".join(parts)
+
+
+def update_context_summary(session: dict, session_file) -> None:
+    """
+    更新会话的上下文摘要（在提交回答后调用）
+
+    只有当历史记录超过阈值时才生成摘要
+    """
+    interview_log = session.get("interview_log", [])
+
+    # 未超过阈值，不需要摘要
+    if len(interview_log) < SUMMARY_THRESHOLD:
+        return
+
+    # 计算需要摘要的记录数
+    history_count = len(interview_log) - CONTEXT_WINDOW_SIZE
+    if history_count <= 0:
+        return
+
+    # 检查是否需要更新摘要
+    cached_summary = session.get("context_summary", {})
+    if cached_summary.get("log_count", 0) >= history_count:
+        return  # 缓存仍然有效
+
+    # 生成新摘要
+    history_logs = interview_log[:history_count]
+
+    if claude_client:
+        summary_prompt = _build_summary_prompt(session.get("topic", ""), history_logs)
+        try:
+            summary_text = call_claude(summary_prompt, max_tokens=300, call_type="summary")
+            if summary_text:
+                session["context_summary"] = {
+                    "text": summary_text,
+                    "log_count": history_count,
+                    "updated_at": get_utc_now()
+                }
+                # 保存更新
+                session_file.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding="utf-8")
+                if ENABLE_DEBUG_LOG:
+                    print(f"📝 已更新上下文摘要（覆盖 {history_count} 条历史记录）")
+        except Exception as e:
+            print(f"⚠️ 更新上下文摘要失败: {e}")
+    else:
+        # 无 AI 时使用简单摘要
+        session["context_summary"] = {
+            "text": _generate_simple_summary(history_logs),
+            "log_count": history_count,
+            "updated_at": get_utc_now()
+        }
+        session_file.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+# ============ 智能追问评估 ============
+
+# 维度追问敏感度（越高越容易触发追问）
+DIMENSION_FOLLOW_UP_SENSITIVITY = {
+    "customer_needs": 0.8,       # 客户需求最需要深挖
+    "business_process": 0.6,     # 业务流程需要一定深度
+    "tech_constraints": 0.5,     # 技术约束相对明确
+    "project_constraints": 0.4,  # 项目约束通常较直接
+}
+
+
+def evaluate_answer_depth(question: str, answer: str, dimension: str,
+                          options: list = None, is_follow_up: bool = False) -> dict:
+    """
+    评估回答深度，判断是否需要追问
+
+    三层判断：
+    1. 明确需要追问（回答太弱）
+    2. 明确不需要追问（回答已充分）
+    3. 建议AI评估（交给AI在生成下一题时判断）
+
+    Returns:
+        {
+            "needs_follow_up": bool,       # 规则层判断结果
+            "suggest_ai_eval": bool,       # 是否建议AI再次评估
+            "reason": str or None,         # 追问原因
+            "signals": list                # 检测到的信号
+        }
+    """
+    # 追问的回答不再追问（避免无限追问）
+    if is_follow_up:
+        return {"needs_follow_up": False, "suggest_ai_eval": False,
+                "reason": None, "signals": []}
+
+    signals = []
+    answer_stripped = answer.strip()
+    answer_len = len(answer_stripped)
+    sensitivity = DIMENSION_FOLLOW_UP_SENSITIVITY.get(dimension, 0.5)
+
+    # ---- 第一层：明确需要追问的情况 ----
+
+    # 1. 回答过短（根据维度敏感度调整阈值）
+    short_threshold = int(20 + sensitivity * 20)  # 客户需求36字符，项目约束28字符
+    if answer_len < short_threshold:
+        signals.append("too_short")
+
+    # 2. 模糊表达检测（扩展词库）
+    vague_indicators = [
+        # 不确定类
+        "看情况", "不一定", "可能", "或许", "大概", "差不多", "到时候",
+        "再说", "还没想好", "不确定", "看具体", "根据情况", "待定",
+        "以后再说", "暂时不清楚", "目前还不好说",
+        # 笼统类
+        "都可以", "都行", "随便", "无所谓", "差不多", "一般",
+        # 回避类
+        "不太了解", "没想过", "不知道", "说不好", "很难说",
+    ]
+    matched_vague = [v for v in vague_indicators if v in answer_stripped]
+    if matched_vague:
+        signals.append("vague_expression")
+
+    # 3. 完全匹配泛泛回答
+    generic_answers = [
+        "好的", "是的", "可以", "没问题", "需要", "应该要",
+        "对", "嗯", "行", "同意", "没有", "不需要",
+    ]
+    if answer_stripped in generic_answers:
+        signals.append("generic_answer")
+
+    # 4. 仅选择了预设选项没有补充（答案等于某个选项原文）
+    if options:
+        is_exact_option = answer_stripped in options
+        # 单选且答案就是选项原文，缺乏自己的思考
+        if is_exact_option and answer_len < 40:
+            signals.append("option_only")
+
+    # 5. 缺乏量化信息（对某些维度重要）
+    has_numbers = any(c.isdigit() for c in answer_stripped)
+    quantitative_dimensions = ["tech_constraints", "project_constraints"]
+    if dimension in quantitative_dimensions and not has_numbers and answer_len < 60:
+        signals.append("no_quantification")
+
+    # 6. 多选但只选了一个（可能需要补充）
+    if options and "；" not in answer_stripped and len(options) >= 3:
+        # 检查是否是多选题但只选了一个
+        selected_count = sum(1 for opt in options if opt in answer_stripped)
+        if selected_count <= 1 and answer_len < 30:
+            signals.append("single_selection")
+
+    # ---- 第二层：判断是否明确不需要追问 ----
+
+    # 回答足够详细，不需要追问
+    sufficient_signals = []
+    if answer_len > 80:
+        sufficient_signals.append("detailed_answer")
+    if "；" in answer_stripped and answer_len > 40:
+        sufficient_signals.append("multi_point_answer")
+    if has_numbers and answer_len > 30:
+        sufficient_signals.append("quantified_answer")
+
+    # ---- 第三层：综合判断 ----
+
+    # 计算追问得分（信号越多越需要追问）
+    signal_weights = {
+        "too_short": 0.4,
+        "vague_expression": 0.5,
+        "generic_answer": 0.8,
+        "option_only": 0.3,
+        "no_quantification": 0.2,
+        "single_selection": 0.2,
+    }
+    follow_up_score = sum(signal_weights.get(s, 0.1) for s in signals)
+    follow_up_score *= sensitivity  # 应用维度敏感度
+
+    # 减去充分度信号
+    sufficient_weights = {
+        "detailed_answer": 0.5,
+        "multi_point_answer": 0.3,
+        "quantified_answer": 0.2,
+    }
+    sufficient_score = sum(sufficient_weights.get(s, 0) for s in sufficient_signals)
+    follow_up_score -= sufficient_score
+
+    # 判断结果
+    if follow_up_score >= 0.4:
+        # 明确需要追问
+        reason = _build_follow_up_reason(signals)
+        return {"needs_follow_up": True, "suggest_ai_eval": False,
+                "reason": reason, "signals": signals}
+    elif follow_up_score >= 0.15 and not sufficient_signals:
+        # 边界情况，建议让AI评估
+        reason = _build_follow_up_reason(signals)
+        return {"needs_follow_up": False, "suggest_ai_eval": True,
+                "reason": reason, "signals": signals}
+    else:
+        # 不需要追问
+        return {"needs_follow_up": False, "suggest_ai_eval": False,
+                "reason": None, "signals": signals}
+
+
+def _build_follow_up_reason(signals: list) -> str:
+    """根据检测到的信号构建追问原因"""
+    reason_map = {
+        "too_short": "回答过于简短，需要补充具体细节",
+        "vague_expression": "回答包含模糊表述，需要明确具体要求",
+        "generic_answer": "回答过于笼统，需要深入了解具体需求",
+        "option_only": "仅选择了预设选项，需要了解具体场景和考量",
+        "no_quantification": "缺少量化指标，需要明确具体数据要求",
+        "single_selection": "只选择了单一选项，需要了解是否还有其他需求",
+    }
+    reasons = [reason_map.get(s, "") for s in signals if s in reason_map]
+    return reasons[0] if reasons else "需要进一步了解详细需求"
+
+
+def build_interview_prompt(session: dict, dimension: str, all_dim_logs: list) -> tuple[str, list]:
+    """构建访谈 prompt（使用滑动窗口 + 摘要压缩 + 智能追问）
+
+    Returns:
+        tuple[str, list]: (prompt字符串, 被截断的文档列表)
+    """
     topic = session.get("topic", "未知项目")
+    description = session.get("description")
     reference_docs = session.get("reference_docs", [])
+    research_docs = session.get("research_docs", [])
     interview_log = session.get("interview_log", [])
     dim_info = DIMENSION_INFO.get(dimension, {})
 
     # 构建上下文
     context_parts = [f"当前调研主题：{topic}"]
 
-    # 添加参考文档内容
+    # 如果有主题描述，添加到上下文中（限制长度）
+    if description:
+        context_parts.append(f"\n主题描述：{description[:500]}")
+
+    # 添加参考文档内容（使用总长度限制 + 智能摘要）
+    total_doc_length = 0
+    truncated_docs = []  # 记录被处理的文档（摘要或截断）
+    summarized_docs = []  # 记录使用智能摘要的文档
     if reference_docs:
         context_parts.append("\n## 参考文档内容：")
         for doc in reference_docs:
-            if doc.get("content"):
-                context_parts.append(f"### {doc.get('name', '文档')}")
-                context_parts.append(doc["content"][:2000])  # 限制长度
+            if doc.get("content") and total_doc_length < MAX_TOTAL_DOCS:
+                remaining = MAX_TOTAL_DOCS - total_doc_length
+                original_length = len(doc["content"])
 
-    # 联网搜索增强（如果需要）
+                # 使用智能摘要处理文档
+                doc_name, processed_content, used_length, was_processed = process_document_for_context(
+                    doc, remaining, topic
+                )
+
+                if processed_content:
+                    context_parts.append(f"### {doc_name}")
+                    context_parts.append(processed_content)
+                    total_doc_length += used_length
+
+                    # 记录处理情况
+                    if was_processed:
+                        if used_length < original_length * 0.6:  # 如果内容减少超过40%，可能是摘要
+                            summarized_docs.append(f"{doc_name}（原{original_length}字符，摘要至{used_length}字符）")
+                        else:
+                            truncated_docs.append(f"{doc_name}（原{original_length}字符，截取{used_length}字符）")
+
+    # 添加已有调研成果内容（共享总长度限制 + 智能摘要）
+    if research_docs and total_doc_length < MAX_TOTAL_DOCS:
+        context_parts.append("\n## 已有调研成果（供参考）：")
+        for doc in research_docs:
+            if doc.get("content") and total_doc_length < MAX_TOTAL_DOCS:
+                remaining = MAX_TOTAL_DOCS - total_doc_length
+                original_length = len(doc["content"])
+
+                # 使用智能摘要处理文档
+                doc_name, processed_content, used_length, was_processed = process_document_for_context(
+                    doc, remaining, topic
+                )
+
+                if processed_content:
+                    context_parts.append(f"### {doc_name}")
+                    context_parts.append(processed_content)
+                    total_doc_length += used_length
+
+                    # 记录处理情况
+                    if was_processed:
+                        if used_length < original_length * 0.6:
+                            summarized_docs.append(f"{doc_name}（原{original_length}字符，摘要至{used_length}字符）")
+                        else:
+                            truncated_docs.append(f"{doc_name}（原{original_length}字符，截取{used_length}字符）")
+
+    # 添加处理提示（让 AI 知道文档信息经过处理）
+    if summarized_docs:
+        context_parts.append(f"\n📝 注意：以下文档已通过AI生成摘要以保留关键信息：{', '.join(summarized_docs)}")
+    if truncated_docs:
+        context_parts.append(f"\n⚠️ 注意：以下文档因长度限制已被截断，请基于已有信息进行提问：{', '.join(truncated_docs)}")
+
+    # 联网搜索增强（限制结果数量和长度）
     if should_search(topic, dimension, session):
         search_query = generate_search_query(topic, dimension, session)
         search_results = web_search(search_query)
 
         if search_results:
             context_parts.append("\n## 行业知识参考（联网搜索）：")
-            for idx, result in enumerate(search_results[:2], 1):  # 只取前2个结果，避免过长
+            for idx, result in enumerate(search_results[:2], 1):
                 if result["type"] == "intent":
-                    context_parts.append(f"**{result['content'][:200]}**")  # 搜索意图
+                    context_parts.append(f"**{result['content'][:150]}**")
                 else:
-                    context_parts.append(f"{idx}. **{result.get('title', '参考信息')[:50]}**")
-                    context_parts.append(f"   {result['content'][:200]}")  # 限制长度
+                    context_parts.append(f"{idx}. **{result.get('title', '参考信息')[:40]}**")
+                    context_parts.append(f"   {result['content'][:150]}")
 
-    # 添加已有问答记录
+    # ========== 滑动窗口 + 摘要压缩 ==========
     if interview_log:
         context_parts.append("\n## 已收集的信息：")
-        for log in interview_log:
+
+        # 判断是否需要使用摘要
+        if len(interview_log) > CONTEXT_WINDOW_SIZE:
+            # 获取或生成历史摘要
+            history_summary = generate_history_summary(session, exclude_recent=CONTEXT_WINDOW_SIZE)
+            if history_summary:
+                context_parts.append(f"\n### 历史调研摘要（共{len(interview_log) - CONTEXT_WINDOW_SIZE}条）：")
+                context_parts.append(history_summary)
+                context_parts.append("\n### 最近问答记录：")
+
+            # 只保留最近的完整记录
+            recent_logs = interview_log[-CONTEXT_WINDOW_SIZE:]
+        else:
+            recent_logs = interview_log
+
+        # 添加完整的最近问答记录
+        for log in recent_logs:
             follow_up_mark = " [追问]" if log.get("is_follow_up") else ""
             context_parts.append(f"- Q: {log['question']}{follow_up_mark}")
             context_parts.append(f"  A: {log['answer']}")
-            if log.get("dimension"):
-                context_parts.append(f"  (维度: {DIMENSION_INFO.get(log['dimension'], {}).get('name', log['dimension'])})")
+            dim_name = DIMENSION_INFO.get(log.get("dimension", ""), {}).get("name", "")
+            if dim_name:
+                context_parts.append(f"  (维度: {dim_name})")
 
     # 计算正式问题数量（排除追问）
     formal_questions_count = len([log for log in all_dim_logs if not log.get("is_follow_up", False)])
 
-    # 判断是否需要对上一个回答进行追问
+    # ========== 智能追问判断（使用增强规则 + AI评估） ==========
     last_log = None
     should_follow_up = False
+    suggest_ai_eval = False
     follow_up_reason = ""
+    eval_signals = []
 
-    if all_dim_logs and not all_dim_logs[-1].get("is_follow_up", False):
-        # 上一个是正式问题，判断回答是否清晰
+    if all_dim_logs:
         last_log = all_dim_logs[-1]
         last_answer = last_log.get("answer", "")
         last_question = last_log.get("question", "")
+        last_options = last_log.get("options", [])
+        last_is_follow_up = last_log.get("is_follow_up", False)
 
-        # 简单判断规则：如果回答很短、很泛泛、或包含"看情况"、"不一定"等模糊词
-        vague_indicators = ["看情况", "不一定", "可能", "或许", "大概", "差不多", "到时候", "再说", "还没想好", "不确定", "看具体", "根据情况"]
-        is_short = len(last_answer) < 15  # 回答太短
-        has_vague = any(indicator in last_answer for indicator in vague_indicators)
-        is_generic = last_answer in ["好的", "是的", "可以", "没问题", "需要", "应该要"]
+        # 使用增强版评估函数
+        eval_result = evaluate_answer_depth(
+            question=last_question,
+            answer=last_answer,
+            dimension=dimension,
+            options=last_options,
+            is_follow_up=last_is_follow_up
+        )
 
-        if is_short or has_vague or is_generic:
-            should_follow_up = True
-            if is_short:
-                follow_up_reason = "回答过于简短，需要补充细节"
-            elif has_vague:
-                follow_up_reason = "回答包含模糊表述，需要明确具体要求"
-            else:
-                follow_up_reason = "回答过于笼统，需要深入了解具体需求"
+        should_follow_up = eval_result["needs_follow_up"]
+        suggest_ai_eval = eval_result["suggest_ai_eval"]
+        follow_up_reason = eval_result["reason"] or ""
+        eval_signals = eval_result["signals"]
 
-    # 如果上一个回答已经标记为需要追问，则继续追问
-    elif all_dim_logs and all_dim_logs[-1].get("needs_follow_up", False):
-        last_log = all_dim_logs[-1]
-        should_follow_up = True
-        follow_up_reason = "继续深入了解上一个问题"
+        if ENABLE_DEBUG_LOG and (should_follow_up or suggest_ai_eval):
+            print(f"🔍 追问评估: signals={eval_signals}, follow_up={should_follow_up}, ai_eval={suggest_ai_eval}")
 
-    prompt = f"""你是一个专业的需求调研访谈师，正在进行"{topic}"的需求调研。
+    # 构建 AI 评估提示（当规则未明确触发但建议AI判断时）
+    ai_eval_guidance = ""
+    if suggest_ai_eval and last_log:
+        ai_eval_guidance = f"""
+## 回答深度评估
+
+请先评估用户的上一个回答是否需要追问：
+
+**上一个问题**: {last_log.get('question', '')[:100]}
+**用户回答**: {last_log.get('answer', '')}
+**检测信号**: {', '.join(eval_signals) if eval_signals else '无明显问题'}
+
+判断标准（满足任一条即应追问）：
+1. 回答只是选择了选项，没有说明具体场景或原因
+2. 缺少量化指标（如时间、数量、频率等）
+3. 回答比较笼统，没有针对性细节
+4. 可能隐藏了更深层的需求或顾虑
+
+如果判断需要追问，请：
+- 设置 is_follow_up: true
+- 针对上一个回答进行深入提问
+- 问题要更具体，引导用户给出明确答案
+
+如果判断不需要追问，请生成新问题继续调研。
+"""
+
+    # 构建追问模式的提示
+    follow_up_section = ""
+    if should_follow_up:
+        follow_up_section = f"""## 追问模式（必须执行）
+
+上一个用户回答需要追问。原因：{follow_up_reason}
+
+**上一个问题**: {last_log.get('question', '')[:100] if last_log else ''}
+**用户回答**: {last_log.get('answer', '') if last_log else ''}
+
+追问要求：
+1. 必须设置 is_follow_up: true
+2. 针对上一个回答进行深入提问，不要跳到新话题
+3. 追问问题要更具体、更有针对性
+4. 引导用户给出具体的场景、数据、或明确的选择
+5. 可以使用"您提到的XXX，能否具体说明..."这样的句式
+"""
+    else:
+        follow_up_section = """## 问题生成要求
+
+1. 生成 1 个针对性的问题，用于收集该维度的关键信息
+2. 为这个问题提供 3-4 个具体的选项
+3. 选项要基于：
+   - 调研主题的行业特点
+   - 参考文档中的信息（如有）
+   - 联网搜索的行业知识（如有）
+   - 已收集的上下文信息
+4. 根据问题性质判断是单选还是多选：
+   - 单选场景：互斥选项（是/否）、优先级选择、唯一选择
+   - 多选场景：可并存的功能需求、多个痛点、多种用户角色
+5. 如果用户的回答与参考文档内容有冲突，要在问题中指出并请求澄清
+"""
+
+    prompt = f"""**严格输出要求：你的回复必须是纯 JSON 对象，不要添加任何解释、markdown 代码块或其他文本。第一个字符必须是 {{，最后一个字符必须是 }}**
+
+你是一个专业的需求调研访谈师，正在进行"{topic}"的需求调研。
+你的核心职责是**深度挖掘用户的真实需求**，不满足于表面回答。
 
 {chr(10).join(context_parts)}
 
@@ -537,62 +1423,50 @@ def build_interview_prompt(session: dict, dimension: str, all_dim_logs: list) ->
 这个维度关注：{dim_info.get('description', '')}
 
 该维度已收集了 {formal_questions_count} 个正式问题的回答，关键方面包括：{', '.join(dim_info.get('key_aspects', []))}
+{ai_eval_guidance}
+{follow_up_section}
 
-{'## 追问模式' if should_follow_up else '## 要求'}
+## 输出格式（必须严格遵守）
 
-{'上一个用户回答需要追问：' + follow_up_reason if should_follow_up else '''1. 生成 1 个针对性的问题，用于收集该维度的关键信息
-2. 为这个问题提供 3-4 个具体的选项
-3. 选项要基于：
-   - 调研主题的行业特点
-   - 参考文档中的信息（如有）
-   - 联网搜索的行业知识（如有）
-   - 已收集的上下文信息'''}
+你的回复必须是一个纯 JSON 对象，格式如下：
 
-4. {'追问是对上一个问题的深入了解，' if should_follow_up else '''根据问题性质判断是单选还是多选：'''}
-   {'- 追问问题要更具体、更深入，引导用户给出明确答案' if should_follow_up else '''- 单选场景：互斥选项（是/否）、优先级选择（最重要的）、唯一选择（首选方案）
-   - 多选场景：可并存的功能需求、多个痛点、多种用户角色、多个系统集成'''}
-
-5. 如果用户的回答与参考文档内容有冲突，要在问题中指出并请求澄清。
-
-## 输出格式
-
-请以 JSON 格式返回：
-```json
 {{
     "question": "你的问题",
     "options": ["选项1", "选项2", "选项3", "选项4"],
     "multi_select": false,
-    "is_follow_up": {str(should_follow_up).lower()},
-    "follow_up_reason": {json.dumps(follow_up_reason) if should_follow_up else "null"},
+    "is_follow_up": {'true' if should_follow_up else 'false 或 true（根据你的判断）'},
+    "follow_up_reason": {json.dumps(follow_up_reason, ensure_ascii=False) if should_follow_up else '"你的判断理由" 或 null'},
     "conflict_detected": false,
     "conflict_description": null
 }}
-```
 
 字段说明：
-- multi_select: 布尔值，true 表示可多选，false 表示单选
-- is_follow_up: 布尔值，true 表示这是追问，false 表示是正式问题
-- follow_up_reason: 如果是追问，说明追问的原因；否则为 null
+- question: 字符串，你要问的问题
+- options: 字符串数组，3-4 个选项
+- multi_select: 布尔值，true=可多选，false=单选
+- is_follow_up: 布尔值，true=追问（针对上一回答深入），false=新问题
+- follow_up_reason: 字符串或 null，追问时说明原因
+- conflict_detected: 布尔值
+- conflict_description: 字符串或 null
 
-**追问不计入 3 个正式问题的限制**。
+**关键提醒：**
+- 不要使用 ```json 代码块标记
+- 不要在 JSON 前后添加任何说明文字
+- 确保 JSON 语法完全正确（所有字符串用双引号，布尔值用 true/false，空值用 null）
+- 你的整个回复就是这个 JSON 对象，没有其他内容
+- **重要**：作为专业访谈师，要善于追问，挖掘表面回答背后的真实需求"""
 
-**重要警告**：
-- 你的回复必须是且只能是一个有效的 JSON 对象
-- 禁止在 JSON 前后添加任何文字、解释或说明
-- 禁止使用 markdown 代码块（不要使用 ```json）
-- 第一个字符必须是 {{，最后一个字符必须是 }}
-- 严格遵守 JSON 语法，所有字符串使用双引号
-- 布尔值用 true/false，字符串用 null 表示空值"""
-
-    return prompt
+    return prompt, truncated_docs
 
 
 def build_report_prompt(session: dict) -> str:
     """构建报告生成 prompt"""
     topic = session.get("topic", "未知项目")
+    description = session.get("description")  # 获取主题描述
     interview_log = session.get("interview_log", [])
     dimensions = session.get("dimensions", {})
     reference_docs = session.get("reference_docs", [])
+    research_docs = session.get("research_docs", [])  # 获取已有调研成果
 
     # 按维度整理问答
     qa_by_dim = {}
@@ -603,15 +1477,76 @@ def build_report_prompt(session: dict) -> str:
 
 ## 调研主题
 {topic}
+"""
 
+    # 如果有主题描述，添加到 prompt 中
+    if description:
+        prompt += f"""
+## 主题描述
+{description}
+"""
+
+    prompt += """
 ## 参考文档
 """
 
     if reference_docs:
+        prompt += "以下是用户提供的参考文档，请在生成报告时参考这些内容：\n\n"
         for doc in reference_docs:
-            prompt += f"- {doc.get('name', '文档')}\n"
+            doc_name = doc.get('name', '文档')
+            prompt += f"### {doc_name}\n"
+            if doc.get("content"):
+                content = doc["content"]
+                original_length = len(content)
+
+                # 使用智能摘要处理长文档
+                if original_length > SMART_SUMMARY_THRESHOLD and ENABLE_SMART_SUMMARY:
+                    processed_content, is_summarized = summarize_document(content, doc_name, topic)
+                    if is_summarized:
+                        prompt += f"{processed_content}\n"
+                        prompt += f"*[原文档 {original_length} 字符，已通过AI生成摘要保留关键信息]*\n\n"
+                    elif len(processed_content) > MAX_DOC_LENGTH:
+                        prompt += f"{processed_content[:MAX_DOC_LENGTH]}\n"
+                        prompt += f"*[文档内容过长，已截取前 {MAX_DOC_LENGTH} 字符]*\n\n"
+                    else:
+                        prompt += f"{processed_content}\n\n"
+                elif original_length > MAX_DOC_LENGTH:
+                    prompt += f"{content[:MAX_DOC_LENGTH]}\n"
+                    prompt += f"*[文档内容过长，已截取前 {MAX_DOC_LENGTH} 字符]*\n\n"
+                else:
+                    prompt += f"{content}\n\n"
+            else:
+                prompt += "*[文档内容为空]*\n\n"
     else:
         prompt += "无参考文档\n"
+
+    # 添加已有调研成果
+    if research_docs:
+        prompt += "\n## 已有调研成果\n"
+        prompt += "以下是用户提供的已有调研成果，请在生成报告时参考并整合这些内容：\n\n"
+        for doc in research_docs:
+            doc_name = doc.get('name', '调研文档')
+            prompt += f"### {doc_name}\n"
+            if doc.get("content"):
+                content = doc["content"]
+                original_length = len(content)
+
+                # 使用智能摘要处理长文档
+                if original_length > SMART_SUMMARY_THRESHOLD and ENABLE_SMART_SUMMARY:
+                    processed_content, is_summarized = summarize_document(content, doc_name, topic)
+                    if is_summarized:
+                        prompt += f"{processed_content}\n"
+                        prompt += f"*[原调研成果 {original_length} 字符，已通过AI生成摘要保留关键信息]*\n\n"
+                    elif len(processed_content) > MAX_DOC_LENGTH:
+                        prompt += f"{processed_content[:MAX_DOC_LENGTH]}\n"
+                        prompt += f"*[调研成果内容过长，已截取前 {MAX_DOC_LENGTH} 字符]*\n\n"
+                    else:
+                        prompt += f"{processed_content}\n\n"
+                elif original_length > MAX_DOC_LENGTH:
+                    prompt += f"{content[:MAX_DOC_LENGTH]}\n"
+                    prompt += f"*[调研成果内容过长，已截取前 {MAX_DOC_LENGTH} 字符]*\n\n"
+                else:
+                    prompt += f"{content}\n\n"
 
     prompt += "\n## 访谈记录\n"
 
@@ -646,7 +1581,7 @@ def build_report_prompt(session: dict) -> str:
 
 ## Mermaid 图表规范
 
-请在报告中包含以下类型的 Mermaid 图表：
+请在报告中包含以下类型的 Mermaid 图表。**除 quadrantChart 外，所有图表都应使用中文标签**。
 
 ### 1. 优先级矩阵（必须）
 使用象限图展示需求优先级，**严格按照以下格式**：
@@ -666,41 +1601,71 @@ quadrantChart
     Requirement3: [0.6, 0.5]
 ```
 
-**严格规则（必须遵守）：**
-- title、x-axis、y-axis、quadrant 标签**必须用英文**
+**quadrantChart 严格规则（必须遵守）：**
+- title、x-axis、y-axis、quadrant 标签**必须用英文**（quadrantChart 不支持中文）
 - 数据点名称**必须用英文或拼音**，不能用中文
 - 数据点格式：`Name: [x, y]`，x和y范围0-1
 - 不要在标签中使用括号、冒号等特殊符号
+- 在图表下方用中文表格说明每个数据点的含义
 
 ### 2. 业务流程图（推荐）
-使用 flowchart 展示关键业务流程：
+使用 flowchart 展示关键业务流程，**使用中文标签**：
 
 ```mermaid
 flowchart TD
-    A[Start] --> B{Decision}
-    B -->|Yes| C[Process1]
-    B -->|No| D[Process2]
-    C --> E[End]
+    A[开始] --> B{判断条件}
+    B -->|是| C[处理流程1]
+    B -->|否| D[处理流程2]
+    C --> E[结束]
     D --> E
 ```
 
-**规则：节点标签建议用英文，中文可能导致渲染问题**
+**flowchart 规则（必须遵守）：**
+- 节点ID使用英文字母（如 A、B、C），节点标签使用中文（如 `A[中文标签]`）
+- 连接线标签使用中文（如 `-->|是|`）
+- subgraph 标题使用中文（如 `subgraph 子流程名称`）
+- **每个 subgraph 必须有对应的 end 关闭**
+- 节点标签中**严禁使用以下特殊字符**：
+  - 半角冒号 `:` - 用短横线 `-` 或空格替代
+  - 半角引号 `"` - 用全角引号 "" 或书名号 《》 替代
+  - 半角括号 `()` - 用全角括号 （） 替代
+  - HTML 标签如 `<br>` - 用空格或换行替代
+- 菱形判断节点使用 `{中文}` 格式
+- **不要在同一个 flowchart 中嵌套过多层级（最多2层 subgraph）**
+- **连接线使用 `-->` 或 `---|` 格式，不要使用 `---`**
 
 ### 3. 需求分类饼图（可选）
+使用中文标签：
 ```mermaid
-pie title Requirements Distribution
-    "Functional" : 45
-    "Performance" : 25
-    "Security" : 20
-    "Usability" : 10
+pie title 需求分布
+    "功能需求" : 45
+    "性能需求" : 25
+    "安全需求" : 20
+    "易用性" : 10
 ```
+
+### 4. 部署架构图（如涉及技术约束）
+如果访谈中涉及部署模式、系统架构等技术话题，可使用 flowchart 展示部署架构：
+
+```mermaid
+flowchart LR
+    A[客户端] --> B[负载均衡]
+    B --> C[应用服务器]
+    C --> D[数据库]
+```
+
+**部署架构图规则：**
+- 使用 flowchart LR（从左到右）或 flowchart TD（从上到下）
+- 节点ID使用英文字母，标签使用中文
+- 保持结构简洁，避免过度复杂的嵌套
 
 ## 重要提醒
 - 所有内容必须严格基于访谈记录，不得编造
 - 使用 Markdown 格式，Mermaid 代码块使用 ```mermaid 标记
-- **Mermaid 图表的标签和数据点名称必须用英文**，可在图表下方用中文说明
+- **flowchart、pie 等图表使用中文标签**，quadrantChart 因技术限制必须用英文
 - 优先级矩阵中的坐标值请根据实际需求评估
 - 报告要专业、结构清晰、可操作
+- **Mermaid 语法要求严格，请仔细检查每个图表的语法正确性**
 - 报告末尾使用署名：*此报告由 Deep Vision 深瞳-智能需求调研助手生成*
 
 请生成完整的报告："""
@@ -709,7 +1674,7 @@ pie title Requirements Distribution
 
 
 async def call_claude_async(prompt: str, max_tokens: int = None) -> Optional[str]:
-    """异步调用 Claude API"""
+    """异步调用 Claude API，带超时控制"""
     if not claude_client:
         return None
 
@@ -717,35 +1682,119 @@ async def call_claude_async(prompt: str, max_tokens: int = None) -> Optional[str
         max_tokens = MAX_TOKENS_DEFAULT
 
     try:
+        if ENABLE_DEBUG_LOG:
+            print(f"🤖 异步调用 Claude API，max_tokens={max_tokens}，timeout={API_TIMEOUT}s")
+
+        # 使用配置的超时时间
         message = claude_client.messages.create(
             model=MODEL_NAME,
             max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            timeout=API_TIMEOUT
         )
-        return message.content[0].text
+
+        response_text = message.content[0].text
+
+        if ENABLE_DEBUG_LOG:
+            print(f"✅ API 异步响应成功，长度: {len(response_text)} 字符")
+
+        return response_text
     except Exception as e:
-        print(f"Claude API 调用失败: {e}")
+        error_msg = str(e)
+        print(f"❌ Claude API 异步调用失败: {error_msg}")
+
+        if "timeout" in error_msg.lower():
+            print(f"   原因: API 调用超时（超过{API_TIMEOUT}秒）")
+        elif "rate" in error_msg.lower():
+            print(f"   原因: API 请求频率限制")
+        elif "authentication" in error_msg.lower() or "api key" in error_msg.lower():
+            print(f"   原因: API Key 认证失败")
+
         return None
 
 
-def call_claude(prompt: str, max_tokens: int = None) -> Optional[str]:
-    """同步调用 Claude API"""
+def call_claude(prompt: str, max_tokens: int = None, retry_on_timeout: bool = True,
+                call_type: str = "unknown", truncated_docs: list = None) -> Optional[str]:
+    """同步调用 Claude API，带超时控制和容错机制"""
+    import time
+
     if not claude_client:
         return None
 
     if max_tokens is None:
         max_tokens = MAX_TOKENS_DEFAULT
 
+    start_time = time.time()
+    success = False
+    timeout_occurred = False
+    error_message = None
+    response_text = None
+
     try:
+        if ENABLE_DEBUG_LOG:
+            print(f"🤖 调用 Claude API，max_tokens={max_tokens}，timeout={API_TIMEOUT}s")
+
+        # 使用配置的超时时间
         message = claude_client.messages.create(
             model=MODEL_NAME,
             max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            timeout=API_TIMEOUT
         )
-        return message.content[0].text
+
+        response_text = message.content[0].text
+        success = True
+
+        if ENABLE_DEBUG_LOG:
+            print(f"✅ API 响应成功，长度: {len(response_text)} 字符")
+
     except Exception as e:
-        print(f"Claude API 调用失败: {e}")
-        return None
+        error_message = str(e)
+        print(f"❌ Claude API 调用失败: {error_message}")
+
+        # 详细的错误分类和容错处理
+        if "timeout" in error_message.lower():
+            timeout_occurred = True
+            print(f"   原因: API 调用超时（超过{API_TIMEOUT}秒）")
+
+            # 超时容错：如果允许重试，尝试减少 prompt 长度
+            if retry_on_timeout and len(prompt) > 5000:
+                print(f"   🔄 尝试容错重试：截断 prompt 后重试...")
+                # 截断 prompt 到原来的 70%
+                truncated_prompt = prompt[:int(len(prompt) * 0.7)]
+                truncated_prompt += "\n\n[注意：由于内容过长，部分上下文已被截断，请基于已有信息进行回答]"
+
+                # 递归重试（禁止再次重试）
+                response_text = call_claude(
+                    truncated_prompt, max_tokens,
+                    retry_on_timeout=False,
+                    call_type=call_type + "_retry",
+                    truncated_docs=truncated_docs
+                )
+
+                if response_text:
+                    success = True
+
+        elif "rate" in error_message.lower():
+            print(f"   原因: API 请求频率限制")
+        elif "authentication" in error_message.lower() or "api key" in error_message.lower():
+            print(f"   原因: API Key 认证失败")
+
+    finally:
+        # 记录指标
+        response_time = time.time() - start_time
+        metrics_collector.record_api_call(
+            call_type=call_type,
+            prompt_length=len(prompt),
+            response_time=response_time,
+            success=success,
+            timeout=timeout_occurred,
+            error_msg=error_message if not success else None,
+            truncated_docs=truncated_docs,
+            max_tokens=max_tokens
+        )
+
+    return response_text
 
 
 # ============ 静态文件 ============
@@ -790,6 +1839,7 @@ def create_session():
     """创建新会话"""
     data = request.get_json()
     topic = data.get("topic", "未命名调研")
+    description = data.get("description")  # 获取可选的主题描述
 
     session_id = generate_session_id()
     now = get_utc_now()
@@ -797,6 +1847,7 @@ def create_session():
     session = {
         "session_id": session_id,
         "topic": topic,
+        "description": description,  # 存储主题描述
         "created_at": now,
         "updated_at": now,
         "status": "in_progress",
@@ -808,6 +1859,7 @@ def create_session():
             "project_constraints": {"coverage": 0, "items": []}
         },
         "reference_docs": [],
+        "research_docs": [],  # 已有调研成果文档
         "interview_log": [],
         "requirements": [],
         "summary": None
@@ -897,8 +1949,22 @@ def get_next_question(session_id):
 
     # 调用 Claude 生成问题
     try:
-        prompt = build_interview_prompt(session, dimension, all_dim_logs)
-        response = call_claude(prompt, max_tokens=MAX_TOKENS_QUESTION)
+        prompt, truncated_docs = build_interview_prompt(session, dimension, all_dim_logs)
+
+        # 日志：记录 prompt 长度（便于监控和调优）
+        if ENABLE_DEBUG_LOG:
+            ref_docs_count = len(session.get("reference_docs", []))
+            research_docs_count = len(session.get("research_docs", []))
+            print(f"📊 访谈 Prompt 统计：总长度={len(prompt)}字符，参考文档={ref_docs_count}个，调研成果={research_docs_count}个")
+            if truncated_docs:
+                print(f"⚠️  文档截断：{len(truncated_docs)}个文档被截断")
+
+        response = call_claude(
+            prompt,
+            max_tokens=MAX_TOKENS_QUESTION,
+            call_type="question",
+            truncated_docs=truncated_docs
+        )
 
         if not response:
             return jsonify({
@@ -1065,14 +2131,15 @@ def get_next_question(session_id):
                     result["is_follow_up"] = False
                 return jsonify(result)
 
-        # 所有方法都失败了
+        # 所有解析方法都失败了
         if ENABLE_DEBUG_LOG:
             print(f"❌ 所有解析方法都失败")
-            print(f"📄 完整响应内容:\n{response}")
+            print(f"📄 AI 响应前500字符:\n{response[:500] if response else 'None'}")
+            print(f"📄 最后解析错误: {str(parse_error) if parse_error else '未知'}")
 
         return jsonify({
             "error": "AI 响应格式错误",
-            "detail": f"AI 返回的内容中未找到有效的 JSON 格式数据。最后错误: {str(parse_error) if parse_error else '未知'}"
+            "detail": "AI 返回的内容无法解析为有效的 JSON 格式。请点击「重试」按钮重新生成问题。"
         }), 503
 
     except Exception as e:
@@ -1171,16 +2238,19 @@ def submit_answer(session_id):
     options = data.get("options", [])
     is_follow_up = data.get("is_follow_up", False)
 
-    # 判断回答是否需要追问
-    needs_follow_up = False
-    if not is_follow_up:  # 只有正式问题才判断是否需要追问
-        # 简单判断规则
-        vague_indicators = ["看情况", "不一定", "可能", "或许", "大概", "差不多", "到时候", "再说", "还没想好", "不确定", "看具体", "根据情况"]
-        is_short = len(answer) < 15
-        has_vague = any(indicator in answer for indicator in vague_indicators)
-        is_generic = answer in ["好的", "是的", "可以", "没问题", "需要", "应该要"]
+    # 使用增强版评估函数判断回答是否需要追问
+    eval_result = evaluate_answer_depth(
+        question=question,
+        answer=answer,
+        dimension=dimension,
+        options=options,
+        is_follow_up=is_follow_up
+    )
+    needs_follow_up = eval_result["needs_follow_up"]
+    follow_up_signals = eval_result["signals"]
 
-        needs_follow_up = is_short or has_vague or is_generic
+    if ENABLE_DEBUG_LOG and (needs_follow_up or eval_result["suggest_ai_eval"]):
+        print(f"📝 回答评估: signals={follow_up_signals}, needs_follow_up={needs_follow_up}")
 
     # 添加到访谈记录
     log_entry = {
@@ -1190,7 +2260,8 @@ def submit_answer(session_id):
         "dimension": dimension,
         "options": options,
         "is_follow_up": is_follow_up,
-        "needs_follow_up": needs_follow_up
+        "needs_follow_up": needs_follow_up,
+        "follow_up_signals": follow_up_signals  # 记录检测到的信号
     }
     session["interview_log"].append(log_entry)
 
@@ -1210,6 +2281,16 @@ def submit_answer(session_id):
 
     session["updated_at"] = get_utc_now()
     session_file.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 异步更新上下文摘要（超过阈值时触发）
+    # 注意：这里在后台线程中执行，不阻塞响应
+    import threading
+    def async_update_summary():
+        try:
+            update_context_summary(session, session_file)
+        except Exception as e:
+            print(f"⚠️ 异步更新摘要失败: {e}")
+    threading.Thread(target=async_update_summary, daemon=True).start()
 
     return jsonify(session)
 
@@ -1343,6 +2424,197 @@ def delete_document(session_id, doc_name):
     })
 
 
+# ============ 已有调研成果 API ============
+
+@app.route('/api/sessions/<session_id>/research-docs', methods=['POST'])
+def upload_research_doc(session_id):
+    """上传已有调研成果文档"""
+    session_file = SESSIONS_DIR / f"{session_id}.json"
+    if not session_file.exists():
+        return jsonify({"error": "会话不存在"}), 404
+
+    if 'file' not in request.files:
+        return jsonify({"error": "未找到文件"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "文件名为空"}), 400
+
+    filename = file.filename
+    filepath = TEMP_DIR / filename
+    file.save(filepath)
+
+    # 读取文件内容
+    ext = Path(filename).suffix.lower()
+    content = ""
+
+    if ext in ['.md', '.txt']:
+        content = filepath.read_text(encoding="utf-8")
+    elif ext == '.pdf':
+        content = f"[PDF 文件: {filename}]"  # 简化处理
+    elif ext in ['.docx', '.xlsx', '.pptx']:
+        # 调用转换脚本
+        import subprocess
+        convert_script = SKILL_DIR / "scripts" / "convert_doc.py"
+        if convert_script.exists():
+            try:
+                result = subprocess.run(
+                    ["uv", "run", str(convert_script), "convert", str(filepath)],
+                    capture_output=True, text=True, cwd=str(SKILL_DIR)
+                )
+                if result.returncode == 0:
+                    converted_file = CONVERTED_DIR / f"{Path(filename).stem}.md"
+                    if converted_file.exists():
+                        content = converted_file.read_text(encoding="utf-8")
+            except Exception as e:
+                print(f"转换文档失败: {e}")
+
+    # 更新会话
+    session = json.loads(session_file.read_text(encoding="utf-8"))
+
+    # 确保 research_docs 字段存在（兼容旧会话）
+    if "research_docs" not in session:
+        session["research_docs"] = []
+
+    session["research_docs"].append({
+        "name": filename,
+        "type": ext,
+        "content": content[:10000],  # 限制长度
+        "uploaded_at": get_utc_now()
+    })
+    session["updated_at"] = get_utc_now()
+    session_file.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "content_length": len(content)
+    })
+
+
+@app.route('/api/sessions/<session_id>/research-docs/<path:doc_name>', methods=['DELETE'])
+def delete_research_doc(session_id, doc_name):
+    """删除已有调研成果文档"""
+    session_file = SESSIONS_DIR / f"{session_id}.json"
+    if not session_file.exists():
+        return jsonify({"error": "会话不存在"}), 404
+
+    session = json.loads(session_file.read_text(encoding="utf-8"))
+
+    # 确保 research_docs 字段存在（兼容旧会话）
+    if "research_docs" not in session:
+        session["research_docs"] = []
+        return jsonify({"error": "文档不存在"}), 404
+
+    # 查找并删除文档
+    original_count = len(session["research_docs"])
+    session["research_docs"] = [
+        doc for doc in session["research_docs"]
+        if doc["name"] != doc_name
+    ]
+
+    if len(session["research_docs"]) == original_count:
+        return jsonify({"error": "文档不存在"}), 404
+
+    session["updated_at"] = get_utc_now()
+    session_file.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return jsonify({
+        "success": True,
+        "deleted": doc_name
+    })
+
+
+# ============ 重新调研 API ============
+
+@app.route('/api/sessions/<session_id>/restart-research', methods=['POST'])
+def restart_research(session_id):
+    """重新调研：将当前访谈记录保存为调研成果，然后重置访谈状态"""
+    session_file = SESSIONS_DIR / f"{session_id}.json"
+    if not session_file.exists():
+        return jsonify({"error": "会话不存在"}), 404
+
+    session = json.loads(session_file.read_text(encoding="utf-8"))
+
+    # 整理当前访谈记录为 markdown 格式
+    interview_log = session.get("interview_log", [])
+    if not interview_log:
+        return jsonify({"error": "没有访谈记录可以保存"}), 400
+
+    # 生成调研成果文档内容
+    research_content = f"""# 调研记录 - {session.get('topic', '未命名调研')}
+
+生成时间: {get_utc_now()}
+
+"""
+
+    if session.get("description"):
+        # 清理描述中的特殊字符
+        desc = session['description'].replace('\n', ' ').replace('\r', '')
+        research_content += f"主题描述: {desc}\n\n"
+
+    research_content += "## 访谈记录\n\n"
+
+    # 按维度整理访谈记录
+    for dim_key, dim_info in DIMENSION_INFO.items():
+        dim_logs = [log for log in interview_log if log.get("dimension") == dim_key]
+        if dim_logs:
+            research_content += f"### {dim_info['name']}\n\n"
+            for log in dim_logs:
+                # 清理文本中的特殊字符，避免影响 JSON 解析
+                question = log.get('question', '').replace('**', '').replace('`', '')
+                answer = log.get('answer', '').replace('**', '').replace('`', '')
+
+                research_content += f"Q: {question}\n\n"
+                research_content += f"A: {answer}\n\n"
+
+                if log.get('follow_up_question'):
+                    follow_q = log['follow_up_question'].replace('**', '').replace('`', '')
+                    follow_a = log.get('follow_up_answer', '').replace('**', '').replace('`', '')
+                    research_content += f"追问: {follow_q}\n\n"
+                    research_content += f"回答: {follow_a}\n\n"
+                research_content += "---\n\n"
+
+    # 确保 research_docs 字段存在
+    if "research_docs" not in session:
+        session["research_docs"] = []
+
+    # 添加到调研成果列表
+    doc_name = f"调研记录-{get_utc_now().replace(':', '-').replace(' ', '_')}.md"
+
+    # 限制内容长度，避免过长导致 AI prompt 问题
+    max_length = 2000
+    if len(research_content) > max_length:
+        research_content = research_content[:max_length] + "\n\n...(内容过长已截断)"
+
+    session["research_docs"].append({
+        "name": doc_name,
+        "type": ".md",
+        "content": research_content,
+        "uploaded_at": get_utc_now()
+    })
+
+    # 重置访谈状态
+    session["interview_log"] = []
+    session["dimensions"] = {
+        "customer_needs": {"coverage": 0, "items": []},
+        "business_process": {"coverage": 0, "items": []},
+        "tech_constraints": {"coverage": 0, "items": []},
+        "project_constraints": {"coverage": 0, "items": []}
+    }
+    session["status"] = "in_progress"  # 重置状态为进行中
+    session["updated_at"] = get_utc_now()
+
+    # 保存会话
+    session_file.write_text(json.dumps(session, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return jsonify({
+        "success": True,
+        "message": "已保存当前调研成果并重置访谈",
+        "research_doc_name": doc_name
+    })
+
+
 # ============ 报告生成 API ============
 
 @app.route('/api/sessions/<session_id>/generate-report', methods=['POST'])
@@ -1357,7 +2629,19 @@ def generate_report(session_id):
     # 检查是否有 Claude API
     if claude_client:
         prompt = build_report_prompt(session)
-        report_content = call_claude(prompt, max_tokens=MAX_TOKENS_REPORT)
+
+        # 日志：记录报告生成 prompt 统计
+        if ENABLE_DEBUG_LOG:
+            ref_docs_count = len(session.get("reference_docs", []))
+            research_docs_count = len(session.get("research_docs", []))
+            interview_count = len(session.get("interview_log", []))
+            print(f"📊 报告生成 Prompt 统计：总长度={len(prompt)}字符，参考文档={ref_docs_count}个，调研成果={research_docs_count}个，访谈记录={interview_count}条")
+
+        report_content = call_claude(
+            prompt,
+            max_tokens=MAX_TOKENS_REPORT,
+            call_type="report"
+        )
 
         if report_content:
             # 追加完整的访谈记录附录（确保附录完整）
@@ -1537,6 +2821,76 @@ def get_web_search_status():
     return jsonify({
         "active": web_search_active
     })
+
+
+@app.route('/api/metrics', methods=['GET'])
+def get_metrics():
+    """获取 API 性能指标和统计信息"""
+    last_n = request.args.get('last_n', type=int)
+    stats = metrics_collector.get_statistics(last_n=last_n)
+    return jsonify(stats)
+
+
+@app.route('/api/metrics/reset', methods=['POST'])
+def reset_metrics():
+    """重置性能指标（清空历史数据）"""
+    try:
+        metrics_collector.metrics_file.write_text(json.dumps({
+            "calls": [],
+            "summary": {
+                "total_calls": 0,
+                "total_timeouts": 0,
+                "total_truncations": 0,
+                "avg_response_time": 0,
+                "avg_prompt_length": 0
+            }
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        return jsonify({"success": True, "message": "性能指标已重置"})
+    except Exception as e:
+        return jsonify({"error": f"重置失败: {e}"}), 500
+
+
+@app.route('/api/summaries', methods=['GET'])
+def get_summaries_info():
+    """获取智能摘要缓存信息"""
+    try:
+        cache_files = list(SUMMARIES_DIR.glob("*.txt"))
+        total_size = sum(f.stat().st_size for f in cache_files)
+
+        return jsonify({
+            "enabled": ENABLE_SMART_SUMMARY,
+            "cache_enabled": SUMMARY_CACHE_ENABLED,
+            "threshold": SMART_SUMMARY_THRESHOLD,
+            "target_length": SMART_SUMMARY_TARGET,
+            "cached_count": len(cache_files),
+            "cache_size_bytes": total_size,
+            "cache_size_kb": round(total_size / 1024, 2),
+            "cache_directory": str(SUMMARIES_DIR)
+        })
+    except Exception as e:
+        return jsonify({"error": f"获取摘要信息失败: {e}"}), 500
+
+
+@app.route('/api/summaries/clear', methods=['POST'])
+def clear_summaries_cache():
+    """清空智能摘要缓存"""
+    try:
+        cache_files = list(SUMMARIES_DIR.glob("*.txt"))
+        deleted_count = 0
+        for f in cache_files:
+            try:
+                f.unlink()
+                deleted_count += 1
+            except Exception:
+                pass
+
+        return jsonify({
+            "success": True,
+            "message": f"已清空 {deleted_count} 个摘要缓存",
+            "deleted_count": deleted_count
+        })
+    except Exception as e:
+        return jsonify({"error": f"清空缓存失败: {e}"}), 500
 
 
 if __name__ == '__main__':
